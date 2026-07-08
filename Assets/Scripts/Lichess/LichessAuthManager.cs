@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using UnityEngine;
 
+// Class to handle Lichess OAuth2 PKCE authentication
 public class LichessAuthManager : MonoBehaviour
 {
     private const string ClientId = "lichess-3d-client";
@@ -17,6 +18,14 @@ public class LichessAuthManager : MonoBehaviour
     private string _codeVerifier;
     private string _accessToken;
 
+    // Read-only public access to the token for other scripts
+    public string AccessToken => _accessToken;
+
+    // Other scripts check this before trying to use the API
+    public bool IsAuthenticated => _accessToken != null;
+
+    public event System.Action OnAuthenticated;
+
     void Start()
     {
         string savedToken = LoadToken();
@@ -26,7 +35,7 @@ public class LichessAuthManager : MonoBehaviour
         {
             _accessToken = savedToken;
             Debug.Log("Found saved token, skipping auth flow");
-            StartCoroutine(FetchAccountInfo());
+            OnAuthenticated?.Invoke();   // notify subscribers token is ready
         }
         else
         {
@@ -67,7 +76,7 @@ public class LichessAuthManager : MonoBehaviour
         // Exchange the short-lived code for a persistent access token
         yield return StartCoroutine(ExchangeCodeForToken(authorizationCode));
 
-        yield return StartCoroutine(FetchAccountInfo());
+        OnAuthenticated?.Invoke();
     }
 
     private string GenerateCodeVerifier()
@@ -94,6 +103,7 @@ public class LichessAuthManager : MonoBehaviour
                 .Replace('/', '_');
         }
     }
+    
     private void StartLocalHttpListener(string expectedState, Action<string> onCodeReceived)
     {
         // Run the listener on a background thread so it doesn't freeze Unity
@@ -160,29 +170,8 @@ public class LichessAuthManager : MonoBehaviour
             TokenResponse tokenResponse = Newtonsoft.Json.JsonConvert.DeserializeObject<TokenResponse>(json);
             _accessToken = tokenResponse.access_token;
             SaveToken(_accessToken);
-            
+
             Debug.Log("Access token received: " + _accessToken);
-        }
-    }
-
-    private IEnumerator FetchAccountInfo()
-    {
-        using (UnityEngine.Networking.UnityWebRequest request = 
-            UnityEngine.Networking.UnityWebRequest.Get("https://lichess.org/api/account"))
-        {
-            request.SetRequestHeader("Authorization", "Bearer " + _accessToken);
-            
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityEngine.Networking.UnityWebRequest.Result.Success)
-            {
-                Debug.LogError("Account fetch failed: " + request.error);
-                yield break;
-            }
-
-            string json = request.downloadHandler.text;
-            LichessAccount account = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessAccount>(json);
-            Debug.Log("Logged in as: " + account.username);
         }
     }
 
@@ -210,12 +199,4 @@ public class TokenResponse
 {
     public string access_token;
     public string token_type;
-}
-
-// Partial representation of the Lichess account endpoint response
-[Serializable]
-public class LichessAccount
-{
-    public string id;
-    public string username;
 }
