@@ -1,91 +1,51 @@
 using UnityEngine;
-using System.Collections.Concurrent;
-using System.Threading;
-using System.IO;
-using System.ComponentModel;
 
-public class LichessEventStream : MonoBehaviour
+// Account-level event stream: Starts on login, reports game starts/finishes
+public class LichessEventStream : LichessStreamBase
 {
-    private LichessAuthManager _authManager;
-    private readonly ConcurrentQueue<string> _eventQueue = new ConcurrentQueue<string>();
-    private Thread _streamThread;
-    private volatile bool _isRunning;
-
-    void Awake()
+    protected override void Awake()
     {
-        _authManager = GetComponent<LichessAuthManager>();
-        // Begin streaming as soon as authentication completes
+        base.Awake();   // run base Awake first to set up _authManager
+        // Start streaming as soon as authentication completes
         _authManager.OnAuthenticated += StartStream;
     }
 
-    void OnDestroy()
+    protected override void OnDestroy()
     {
         if (_authManager != null)
             _authManager.OnAuthenticated -= StartStream;
-        
-        StopStream();
+        base.OnDestroy();   // let base stop the thread
     }
 
-    private void StartStream()
+    protected override string GetStreamUrl()
     {
-        _isRunning = true;
-
-        // Launch the reading loop on background thread
-        _streamThread = new Thread(StreamLoop);
-        _streamThread.IsBackground = true; 
-        _streamThread.Start();
-
-        Debug.Log("Event stream started");
+        return "https://lichess.org/api/stream/event";
     }
 
-    private void StopStream()
+    protected override void HandleLine(string line)
     {
-        _isRunning = false;
-    }
+        var baseEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessEventBase>(line);
 
-    private void StreamLoop()
-    {
-        try
+        switch (baseEvent.type)
         {
-            // HttpWebRequest to read the response body incrementally, UnityWebRequest waits for full response
-            var request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(
-                "https://lichess.org/api/stream/event");
-            request.Headers.Add("Authorization", "Bearer " + _authManager.AccessToken);
-
-            using (var response = (System.Net.HttpWebResponse)request.GetResponse())
-            using (var stream = response.GetResponseStream())
-            using (var reader = new StreamReader(stream))
-            {
-                // Keep reading lines until shutdown is signalled or the stream ends
-                while (_isRunning && !reader.EndOfStream)
+            case "gameStart":
                 {
-                    string line = reader.ReadLine();
-
-                    // Filter keepalive blanks at transport boundary, so queue only holds real events
-                    if (!string.IsNullOrEmpty(line))
-                    {
-                        _eventQueue.Enqueue(line);
-                    }
+                    var gameEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<GameEvent>(line);
+                    Debug.Log("gameEvent gameId: " + gameEvent.game.gameId);
+                    Debug.Log("gameEvent Opponent Username: " + gameEvent.game.opponent.username);
+                    break;
                 }
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError("Event stream error: " + e.Message);
-        }
-    }
 
-    private void Update()
-    {
-        while (_eventQueue.TryDequeue(out string line))
-        {
-            HandleEvent(line);
+            case "gameFinish":
+                {
+                    var gameEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<GameEvent>(line);
+                    Debug.Log("Game finished: " + gameEvent.game.gameId);
+                    break;
+                }
+
+            default:
+                Debug.Log("Unhandled event type: " + baseEvent.type);
+                break;
         }
     }
-
-    private void HandleEvent(string line)
-    {
-        Debug.Log("Event received: " + line);
-    }
-
 }
