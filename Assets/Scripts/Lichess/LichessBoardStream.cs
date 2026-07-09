@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 // Per-game stream: Starts when a game begins, carries moves,
@@ -5,7 +6,14 @@ using UnityEngine;
 public class LichessBoardStream : LichessStreamBase
 {
     private string _gameId;
+    private LichessClient _client;
 
+    protected override void Awake()
+    {
+        base.Awake();
+        _client = GetComponent<LichessClient>();    
+    }
+    
     public void BeginGame(string gameId)
     {
         _gameId = gameId;
@@ -20,5 +28,45 @@ public class LichessBoardStream : LichessStreamBase
     protected override void HandleLine(string line)
     {
         Debug.Log("Board stream line: " + line);
+    }
+
+    // Send a move in UCI format for current game
+    public void SendMove(string uciMove)
+    {
+        string url = "https://lichess.org/api/board/game/" + _gameId + "/move/" + uciMove;
+
+        WWWForm emptyForm = new WWWForm(); // endpoint reads gameId and move from the URL path, so no body to send
+
+        StartCoroutine(_client.Post(url, emptyForm,
+            onSuccess: response => Debug.Log("Move sent successfully: " + uciMove),
+            onError: error => Debug.LogError("Move failed (" + uciMove + "): " + error)));
+    }
+
+    // =====================================================================================
+    // TEMP SEND INPUT TEST, TO BE REMOVED LATER: press key to fire a hardcoded opening move
+    // =====================================================================================
+    protected override void Update()
+    {
+        base.Update();   // keep draining stream queue
+
+        
+        // W for white opening move
+        if (Input.GetKeyDown(KeyCode.W))
+        {
+            Debug.Log("Test: sending d2d4");
+            SendMove("d2d4");
+        }
+        // B for slav opening as black
+        if (Input.GetKeyDown(KeyCode.B))
+        {
+            Debug.Log("Test: sending d7d5");
+            SendMove("d7d5");
+        }
+        // C for caro kann opening as black
+        if (Input.GetKeyDown(KeyCode.C))
+        {
+            Debug.Log("Test: sending c7c6");
+            SendMove("c7c6");
+        }
     }
 }

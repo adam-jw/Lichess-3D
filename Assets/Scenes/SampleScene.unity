@@ -395,6 +395,7 @@ GameObject:
   - component: {fileID: 785838376}
   - component: {fileID: 785838378}
   - component: {fileID: 785838379}
+  - component: {fileID: 785838380}
   m_Layer: 0
   m_Name: LichessManager
   m_TagString: Untagged
@@ -453,6 +454,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6f9e5314fbca28a40a96db462ffafdd6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LichessEventStream
+--- !u!114 &785838380
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 785838375}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe116ba944d49b245b6f6a87c73087d9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::LichessBoardStream
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
