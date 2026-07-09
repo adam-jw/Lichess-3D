@@ -54,6 +54,7 @@ public abstract class LichessStreamBase : MonoBehaviour
             using (var stream = response.GetResponseStream())
             using (var reader = new StreamReader(stream))
             {
+                Debug.Log("Stream connected: " + GetStreamUrl());
                 while (_isRunning && !reader.EndOfStream)
                 {
                     string line = reader.ReadLine();
