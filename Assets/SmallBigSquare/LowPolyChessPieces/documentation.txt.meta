@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 9c45f716a223e26499dba9502a61a1da
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/documentation.txt
+  uploadId: 732033

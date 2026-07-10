@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: a5508639c65092443959df8aa9f1a91b
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Scripts/GuideSO.cs
+  uploadId: 732033

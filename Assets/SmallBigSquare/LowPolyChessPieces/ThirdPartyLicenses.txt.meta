@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: c4d042e5462b4204b997452bcf0a3fce
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/ThirdPartyLicenses.txt
+  uploadId: 732033

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 05fc06c0bb1601a4bb3659ba1bb676a5
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Prefabs/Rook.prefab
+  uploadId: 732033

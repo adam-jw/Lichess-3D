@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: d4125c450fd5e2840b5c5bf569b04169
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Materials/GroundMat.mat
+  uploadId: 732033

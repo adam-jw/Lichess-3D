@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 0c973a788e91a6441b75761b8d4ccb99
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Prefabs/Bishop.prefab
+  uploadId: 732033

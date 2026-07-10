@@ -8,6 +8,16 @@ public class BoardState
     // Ex: square "e2" is _squares[4, 1].
     private readonly Piece[,] _squares = new Piece[8, 8];
 
+    public Piece At(int file, int rank) => _squares[file, rank];
+
+    // for readable tests and debugging e.g. At("e4")
+    public Piece At(string square)
+    {
+        int file = square[0] - 'a';
+        int rank = square[1] - '1';
+        return _squares[file, rank];
+    }
+
     // Back-rank piece order, files a->h, Identical for both colors
     private static readonly PieceType[] BackRank =
     {
@@ -94,4 +104,19 @@ public class BoardState
         'n' => PieceType.Knight,
         _ => throw new ArgumentException($"Bad promotion piece '{c}'"),
     };
+
+    public static BoardState FromMoves(string moves)
+    {
+        var board = new BoardState();
+        board.Reset();
+
+        if (string.IsNullOrWhiteSpace(moves))
+            return board;  // game just started -> starting position
+
+        string[] tokens = moves.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (string uci in tokens)
+            board.ApplyUci(uci);
+
+        return board;
+    }
 }

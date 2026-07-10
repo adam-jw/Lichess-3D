@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 0ce3a647bdd7aa240843a6e8818dc1b6
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 4300000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Meshes/Horse_mesh.asset
+  uploadId: 732033

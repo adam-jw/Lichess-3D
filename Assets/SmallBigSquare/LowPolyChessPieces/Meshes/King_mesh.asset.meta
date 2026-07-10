@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 502662de4336cdd4f9c48900157b84a5
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 4300000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Meshes/King_mesh.asset
+  uploadId: 732033

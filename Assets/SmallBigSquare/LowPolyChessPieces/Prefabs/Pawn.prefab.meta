@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 3b95ac75523f13d42bbde9b7a8de45d0
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Prefabs/Pawn.prefab
+  uploadId: 732033

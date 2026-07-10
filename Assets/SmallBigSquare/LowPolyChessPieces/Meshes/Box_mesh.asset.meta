@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 87280a12b04da22438605a61c56e1c6b
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 4300000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 310624
+  packageName: Low Poly Chess Pieces
+  packageVersion: 1.0
+  assetPath: Assets/SmallBigSquare/LowPolyChessPieces/Meshes/Box_mesh.asset
+  uploadId: 732033
