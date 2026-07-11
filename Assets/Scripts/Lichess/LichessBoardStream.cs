@@ -7,6 +7,8 @@ public class LichessBoardStream : LichessStreamBase
 {
     private string _gameId;
     private LichessClient _client;
+    public event System.Action<string> OnMovesReceived;
+
 
     protected override void Awake()
     {
@@ -27,7 +29,30 @@ public class LichessBoardStream : LichessStreamBase
 
     protected override void HandleLine(string line)
     {
-        Debug.Log("Board stream line: " + line);
+        var baseEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessEventBase>(line);
+        string moves;
+
+        switch (baseEvent.type)
+        {
+            case "gameFull":
+                var full = Newtonsoft.Json.JsonConvert.DeserializeObject<GameFullEvent>(line);
+                if (full.initialFen != "startpos")
+                {
+                    Debug.LogError("Non-standard starting position not supported: " + full.initialFen);
+                    return;
+                }
+                moves = full.state.moves;
+                break;
+
+            case "gameState":
+                moves = Newtonsoft.Json.JsonConvert.DeserializeObject<GameStateEvent>(line).moves;
+                break;
+
+            default:   // chatLine, opponentGone, etc. nothing to render on board
+                return;
+        }
+
+        OnMovesReceived?.Invoke(moves);
     }
 
     // Send a move in UCI format for current game

@@ -31,3 +31,18 @@ public class GameOpponent
     public string username;
     public int? rating;         // nullable; null == unrated
 }
+
+// Mirrors GameStateEvent: per-move line
+public class GameStateEvent
+{
+    public string type;    // "gameState"
+    public string moves;   // full space-separated UCI list
+}
+
+// Mirrors GameFullEvent: first line of the board stream, nests a gameState
+public class GameFullEvent
+{
+    public string type;        // "gameFull"
+    public string initialFen;  // "startpos" for standard games
+    public GameStateEvent state;
+}
