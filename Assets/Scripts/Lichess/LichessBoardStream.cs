@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using UnityEngine;
 
 // Per-game stream: Starts when a game begins, carries moves,
@@ -65,33 +64,5 @@ public class LichessBoardStream : LichessStreamBase
         StartCoroutine(_client.Post(url, emptyForm,
             onSuccess: response => Debug.Log("Move sent successfully: " + uciMove),
             onError: error => Debug.LogError("Move failed (" + uciMove + "): " + error)));
-    }
-
-    // =====================================================================================
-    // TEMP SEND INPUT TEST, TO BE REMOVED LATER: press key to fire a hardcoded opening move
-    // =====================================================================================
-    protected override void Update()
-    {
-        base.Update();   // keep draining stream queue
-
-        
-        // W for white opening move
-        if (Input.GetKeyDown(KeyCode.W))
-        {
-            Debug.Log("Test: sending d2d4");
-            SendMove("d2d4");
-        }
-        // B for slav opening as black
-        if (Input.GetKeyDown(KeyCode.B))
-        {
-            Debug.Log("Test: sending d7d5");
-            SendMove("d7d5");
-        }
-        // C for caro kann opening as black
-        if (Input.GetKeyDown(KeyCode.C))
-        {
-            Debug.Log("Test: sending c7c6");
-            SendMove("c7c6");
-        }
     }
 }

@@ -7,6 +7,10 @@ public class BoardView : MonoBehaviour
     [SerializeField] private float pieceScale = 1f;
     [SerializeField] private LichessBoardStream _boardStream;
 
+    private BoardState _currentBoard;
+
+    public BoardState CurrentBoard => _currentBoard;
+
     // Have Unity serialize an array of a [Serializable] struct; edit mapping
     // in the Inspector and build the real lookup dictionary at runtime
     [System.Serializable]
@@ -18,7 +22,6 @@ public class BoardView : MonoBehaviour
     }
 
     [SerializeField] private PiecePrefab[] piecePrefabs;   // 12 entries: 6 types x 2 colors
-    [SerializeField] private string testMoves = "";        // scratch input for testing board state from UCI moves
 
     private Dictionary<(PieceType, PieceColor), GameObject> _lookup;
     private readonly List<GameObject> _spawned = new List<GameObject>();
@@ -39,12 +42,14 @@ public class BoardView : MonoBehaviour
 
     private void Start()
     {
-        Render(BoardState.FromMoves(testMoves));   // empty string -> starting position
+        Render(BoardState.FromMoves(""));   // empty string -> starting position
     }
 
     // Destroys last update's pieces, rebuilds from given state
     public void Render(BoardState board)
     {
+        _currentBoard = board;
+
         foreach (GameObject go in _spawned)
             Destroy(go);
         _spawned.Clear();
@@ -63,17 +68,19 @@ public class BoardView : MonoBehaviour
                 }
 
                 GameObject go = Instantiate(prefab, transform);          // parent under the board root
-                go.transform.localPosition = SquareToLocal(file, rank);  // set explicitly
+                go.transform.localPosition = SquareToLocal(file, rank);
                 go.transform.localScale *= pieceScale;                   
                 _spawned.Add(go);
-            }
-    }
 
-    [ContextMenu("Render Test Position")]   // right-click the component (in Play mode) to re-render
-    private void RenderTestPosition()
-    {
-        if (_lookup == null) Awake();
-        Render(BoardState.FromMoves(testMoves));
+                // Logging this piece's attributes in PieceRef
+                PieceRef pieceRef = go.AddComponent<PieceRef>();
+                pieceRef.File = file;
+                pieceRef.Rank = rank;
+                pieceRef.Type = piece.Type;
+                pieceRef.Color = piece.Color;
+
+                _spawned.Add(go);
+            }
     }
 
     public Vector3 SquareToLocal(int file, int rank)
@@ -81,6 +88,15 @@ public class BoardView : MonoBehaviour
         float x = (file - 3.5f) * squareSize;
         float z = (rank - 3.5f) * squareSize;
         return new Vector3(x, 0f, z);
+    }
+
+    // LOCAL-space point on the board -> the square containing it
+    // Returns false if the point is outside the 8x8
+    public bool LocalToSquare(Vector3 local, out int file, out int rank)
+    {
+        file = Mathf.RoundToInt(local.x / squareSize + 3.5f);
+        rank = Mathf.RoundToInt(local.z / squareSize + 3.5f);
+        return file >= 0 && file < 8 && rank >= 0 && rank < 8;
     }
 
     // TEMP board square rendering
