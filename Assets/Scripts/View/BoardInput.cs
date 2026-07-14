@@ -6,7 +6,7 @@ public class BoardInput : MonoBehaviour
 {
     [SerializeField] private BoardView _boardView;
     [SerializeField] private Camera _camera;   // leave empty to use Camera.main
-    [SerializeField] private LichessBoardStream _boardStream;
+    [SerializeField] private LichessGameSession _session;
 
     private bool _hasSelection;
     private int _selectedFile, _selectedRank;
@@ -94,7 +94,7 @@ public class BoardInput : MonoBehaviour
         _hasSelection = false;
 
         Debug.Log($"Sending move: {uci}");
-        _boardStream.SendMove(uci);
+        _session.SendMove(uci);
     }
 
     private bool TryGetClickedSquare(out int file, out int rank)

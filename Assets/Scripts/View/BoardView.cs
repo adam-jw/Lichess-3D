@@ -5,7 +5,7 @@ public class BoardView : MonoBehaviour
 {
     [SerializeField] private float squareSize = 1f;
     [SerializeField] private float pieceScale = 1f;
-    [SerializeField] private LichessBoardStream _boardStream;
+    [SerializeField] private LichessGameSession _session;
 
     private BoardState _currentBoard;
 
@@ -113,14 +113,14 @@ public class BoardView : MonoBehaviour
 
     private void OnEnable()
     {
-        if (_boardStream != null)
-            _boardStream.OnMovesReceived += HandleMovesReceived;
+        if (_session != null)
+            _session.OnMovesReceived += HandleMovesReceived;
     }
 
     private void OnDisable()
     {
-        if (_boardStream != null)
-            _boardStream.OnMovesReceived -= HandleMovesReceived;
+        if (_session != null)
+            _session.OnMovesReceived -= HandleMovesReceived;
     }
 
     private void HandleMovesReceived(string moves)

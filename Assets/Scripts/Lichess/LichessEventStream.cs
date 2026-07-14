@@ -1,13 +1,13 @@
 using UnityEngine;
 
-// Account-level event stream: Starts on login, reports game starts/finishes
+// Account-level event stream: Starts on login, announces game starts/ends
 public class LichessEventStream : LichessStreamBase
 {
-    private LichessBoardStream _boardStream;
-    protected override void Awake()
+    public event System.Action<GameEventInfo> OnGameStart;
+    public event System.Action<GameEventInfo> OnGameFinish;
+    private void Awake()
     {
-        base.Awake();   // run base Awake first to set up _authManager
-        _boardStream = GetComponent<LichessBoardStream>();
+        _authManager = GetComponent<LichessAuthManager>();
         _authManager.OnAuthenticated += StartStream;
     }
 
@@ -32,15 +32,16 @@ public class LichessEventStream : LichessStreamBase
             case "gameStart":
                 {
                     var gameEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<GameEvent>(line);
-                    Debug.Log("Game started, opening board stream: " + gameEvent.game.gameId);
-                    _boardStream.BeginGame(gameEvent.game.gameId);
+                    Debug.Log("Event: gameStart " + gameEvent.game.gameId);
+                    OnGameStart?.Invoke(gameEvent.game);
                     break;
                 }
 
             case "gameFinish":
                 {
                     var gameEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<GameEvent>(line);
-                    Debug.Log("Game finished: " + gameEvent.game.gameId);
+                    Debug.Log("Event: gameFinish " + gameEvent.game.gameId);
+                    OnGameFinish?.Invoke(gameEvent.game);
                     break;
                 }
 

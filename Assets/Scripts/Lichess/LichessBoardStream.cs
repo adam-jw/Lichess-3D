@@ -1,24 +1,22 @@
 using UnityEngine;
 
-// Per-game stream: Starts when a game begins, carries moves,
-// closes when the game ends. One of these runs per active game
+// Per-game stream: one of these exists for exactly one game
+// Created by LichessGameSession when a game starts, destroyed when it ends
 public class LichessBoardStream : LichessStreamBase
 {
     private string _gameId;
     private LichessClient _client;
-    public event System.Action<string> OnMovesReceived;
 
+    // Carries whole state line, not just the moves (status, clocks, etc)
+    public event System.Action<GameStateEvent> OnGameStateReceived;
 
-    protected override void Awake()
+    public string GameId => _gameId;
+
+    public void Initialize(LichessAuthManager authManager, LichessClient client, string gameId)
     {
-        base.Awake();
-        _client = GetComponent<LichessClient>();    
-    }
-    
-    public void BeginGame(string gameId)
-    {
+        _authManager = authManager;
+        _client = client;
         _gameId = gameId;
-        StartStream();
     }
 
     protected override string GetStreamUrl()
@@ -29,7 +27,7 @@ public class LichessBoardStream : LichessStreamBase
     protected override void HandleLine(string line)
     {
         var baseEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessEventBase>(line);
-        string moves;
+        GameStateEvent state;
 
         switch (baseEvent.type)
         {
@@ -40,21 +38,21 @@ public class LichessBoardStream : LichessStreamBase
                     Debug.LogError("Non-standard starting position not supported: " + full.initialFen);
                     return;
                 }
-                moves = full.state.moves;
+                state = full.state;   // gameFull nests a gameState
                 break;
 
             case "gameState":
-                moves = Newtonsoft.Json.JsonConvert.DeserializeObject<GameStateEvent>(line).moves;
+                state = Newtonsoft.Json.JsonConvert.DeserializeObject<GameStateEvent>(line);
                 break;
 
             default:   // chatLine, opponentGone, etc. nothing to render on board
                 return;
         }
 
-        OnMovesReceived?.Invoke(moves);
+        OnGameStateReceived?.Invoke(state);
     }
 
-    // Send a move in UCI format for current game
+    // Send a move in UCI format for this game
     public void SendMove(string uciMove)
     {
         string url = "https://lichess.org/api/board/game/" + _gameId + "/move/" + uciMove;

@@ -34,11 +34,6 @@ public abstract class LichessStreamBase : MonoBehaviour
     // Answers whether a stream is live
     public bool IsStreaming => _streamThread != null && _streamThread.IsAlive;
 
-    protected virtual void Awake()
-    {
-        _authManager = GetComponent<LichessAuthManager>();
-    }
-
 
     // ---------- TEMPLATE METHOD HOLES ----------
 
