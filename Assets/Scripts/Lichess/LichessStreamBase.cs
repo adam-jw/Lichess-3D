@@ -5,7 +5,16 @@ using System.IO;
 using System.Net;
 using UnityEngine;
 
-// Abstract class for any Lichess NDJSON stream (event, board, etc)
+// How a stream's connection ended
+public enum StreamEndReason
+{
+    ClosedByServer,   // reader hit EndOfStream; normal close or dropped connection
+    StoppedByUs,      // called StopStream / Abort; deliberate, never reconnect
+    AuthFailed,       // 401: token revoked or expired
+    Error             // anything else (DNS, refused, reset) - treat as a drop
+}
+
+// Abstract class for any Lichess NDJSON stream (event, board, seek etc)
 // Subclasses will supply URL and decide what to do with each line
 public abstract class LichessStreamBase : MonoBehaviour
 {
@@ -28,8 +37,11 @@ public abstract class LichessStreamBase : MonoBehaviour
     // Set by background thread when the loop exits; consumed on main thread (Update)
     private volatile bool _endedSignal;
 
-    // Fired on the main thread once the stream has closed, for any reason
-    public event Action OnStreamEnded;
+    // Why the loop ended, written by the background thread before it signals
+    private StreamEndReason _endReason;
+
+    // Fired on the main thread once the stream has closed, carrying why it closed
+    public event Action<StreamEndReason> OnStreamEnded;
 
     // Answers whether a stream is live
     public bool IsStreaming => _streamThread != null && _streamThread.IsAlive;
@@ -79,12 +91,14 @@ public abstract class LichessStreamBase : MonoBehaviour
 
         try { _request?.Abort(); } catch { }    // unblock it
 
-        _streamThread.Join(500);                // wait for it to die
+        _streamThread.Join(500);                // bounded: don't hang the main thread forever
         _streamThread = null;
     }
 
     private void StreamLoop()
     {
+        StreamEndReason reason = StreamEndReason.ClosedByServer;
+
         try
         {
             var request = (HttpWebRequest)WebRequest.Create(GetStreamUrl());
@@ -111,14 +125,40 @@ public abstract class LichessStreamBase : MonoBehaviour
                 }
             }
         }
-        catch (System.Exception e)
+        catch (WebException we)
         {
-            // Deliberate Abort() would log here without isRunning condition
+            // If we aborted the request ourself, not a failure
+            if (!_isRunning)
+            {
+                reason = StreamEndReason.StoppedByUs;
+            }
+            else if (we.Response is HttpWebResponse http &&
+                     http.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                // 401: token is revoked or expired
+                reason = StreamEndReason.AuthFailed;
+                Debug.LogError("Stream auth failed (" + GetType().Name + "): 401 Unauthorized");
+            }
+            else
+            {
+                reason = StreamEndReason.Error;
+                Debug.LogError("Stream error (" + GetType().Name + "): " + we.Message);
+            }
+        }
+        catch (Exception e)
+        {
+            // Non-Web exceptions (e.g. a parse fault)
+            reason = _isRunning ? StreamEndReason.Error : StreamEndReason.StoppedByUs;
             if (_isRunning)
                 Debug.LogError("Stream error (" + GetType().Name + "): " + e.Message);
         }
         finally
         {
+            // Exited cleanly because _isRunning went false, classify as deliberate
+            if (!_isRunning && reason == StreamEndReason.ClosedByServer)
+                reason = StreamEndReason.StoppedByUs;
+
+            _endReason = reason;
             _isRunning = false;
             _request = null;
             _endedSignal = true;   // Update() will turn this into OnStreamEnded
@@ -137,7 +177,7 @@ public abstract class LichessStreamBase : MonoBehaviour
         if (_endedSignal)
         {
             _endedSignal = false;
-            OnStreamEnded?.Invoke();
+            OnStreamEnded?.Invoke(_endReason);
         }
     }
 

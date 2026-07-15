@@ -100,16 +100,16 @@ public class LichessGameSession : MonoBehaviour
     // ---------- End ----------
 
     // The board stream's connection closed, cleanly or by connection drop
-    private void HandleStreamEnded()
+    private void HandleStreamEnded(StreamEndReason streamEnd)
     {
         if (!IsGameActive)
-            return;   // idempotent: already torn down
+            return;
 
-        GameEndReason reason = _sawTerminalStatus
+        GameEndReason gameEnd = _sawTerminalStatus
             ? GameEndReason.Finished
             : GameEndReason.ConnectionLost;
 
-        EndGame(reason);
+        EndGame(gameEnd);
     }
 
     // Lichess's out-of-band confirmation on the account event stream 
