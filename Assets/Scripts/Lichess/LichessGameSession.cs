@@ -13,8 +13,16 @@ public class LichessGameSession : MonoBehaviour
     private LichessBoardStream _boardStream;
 
     public string CurrentGameId { get; private set; }
-    public string MyColor { get; private set; }
+    public PieceColor? MyColor { get; private set; }    // parsed from wire "white"/"black"; null between games
+    public PieceColor? SideToMove { get; private set; }  // whose move it is now; null between games
     public bool IsGameActive { get; private set; }
+
+    public bool IsMyTurn =>
+        IsGameActive && MyColor.HasValue && SideToMove == MyColor;
+
+    // True only for a piece of our color during an active game
+    public bool IsMyPiece(PieceColor pieceColor) =>
+        IsGameActive && MyColor == pieceColor;
 
     private bool _sawTerminalStatus; // Did the board stream tell us in-band the game is over?
     private string _finalStatus;
@@ -51,7 +59,8 @@ public class LichessGameSession : MonoBehaviour
         }
 
         CurrentGameId = game.gameId;
-        MyColor = game.color;
+        MyColor = ParseColor(game.color);
+        SideToMove = PieceColor.White;
         IsGameActive = true;
         _sawTerminalStatus = false;
         _finalStatus = null;
@@ -72,6 +81,8 @@ public class LichessGameSession : MonoBehaviour
 
     private void HandleGameState(GameStateEvent state)
     {
+        SideToMove = BoardState.SideToMove(CountMoves(state.moves));
+
         OnGameStateReceived?.Invoke(state);
         OnMovesReceived?.Invoke(state.moves);
 
@@ -87,15 +98,33 @@ public class LichessGameSession : MonoBehaviour
     // Called by BoardInput 
     public void SendMove(string uciMove)
     {
-        // TO-DO: add turn guard; once we know MyColor, we can refuse to send if not our turn
         if (!IsGameActive || _boardStream == null)
         {
             Debug.LogWarning("SendMove ignored - no active game: " + uciMove);
             return;
         }
 
+        if (!IsMyTurn)
+        {
+            // TO-DO: Enable premoves here; for now refuse move
+            Debug.Log("SendMove refused - not your turn: " + uciMove);
+            return;
+        }
+
         _boardStream.SendMove(uciMove);
     }
+
+    private static PieceColor? ParseColor(string wire) => wire switch
+    {
+        "white" => PieceColor.White,
+        "black" => PieceColor.Black,
+        _ => null,
+    };
+
+    private static int CountMoves(string moves) =>
+        string.IsNullOrWhiteSpace(moves)
+            ? 0
+            : moves.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries).Length;
 
     // ---------- End ----------
 
@@ -149,6 +178,7 @@ public class LichessGameSession : MonoBehaviour
 
         CurrentGameId = null;
         MyColor = null;
+        SideToMove = null;
 
         OnGameEnded?.Invoke(reason, _finalStatus);
     }

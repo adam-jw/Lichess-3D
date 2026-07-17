@@ -7,6 +7,7 @@ public class BoardInput : MonoBehaviour
     [SerializeField] private BoardView _boardView;
     [SerializeField] private Camera _camera;   // leave empty to use Camera.main
     [SerializeField] private LichessGameSession _session;
+    [SerializeField] private BoardHighlighter _highlighter;
 
     private bool _hasSelection;
     private int _selectedFile, _selectedRank;
@@ -23,6 +24,9 @@ public class BoardInput : MonoBehaviour
             HandleMouseDown();
         else if (Input.GetMouseButtonUp(0))
             HandleMouseUp();
+
+        UpdateHoverHighlight();
+        UpdateSelectionHighlight();
     }
 
     private void HandleMouseDown()
@@ -54,8 +58,12 @@ public class BoardInput : MonoBehaviour
             return;
         }
 
-        // Otherwise start a selection, but only if a piece is there
-        if (board == null || board.At(file, rank).IsEmpty)
+        // Otherwise start a selection: a piece must be there AND it must be ours
+        if (board == null)
+            return;
+
+        Piece piece = board.At(file, rank);
+        if (piece.IsEmpty || !_session.IsMyPiece(piece.Color))
             return;
 
         _hasSelection = true;
@@ -129,4 +137,34 @@ public class BoardInput : MonoBehaviour
     // Turn array pos. to chessboard notation for readability
     private static string SquareName(int file, int rank) =>
         $"{(char)('a' + file)}{(char)('1' + rank)}";
+
+    private void UpdateHoverHighlight()
+    {
+        if (_highlighter == null) return;
+
+        if (TryGetClickedSquare(out int file, out int rank))
+            _highlighter.SetHover(file, rank, IsSelectable(file, rank));
+        else
+            _highlighter.ClearHover();
+    }
+
+    // Selection highlight derived from state every frame 
+    private void UpdateSelectionHighlight()
+    {
+        if (_highlighter == null) return;
+
+        if (_hasSelection)
+            _highlighter.SetSelection(_selectedFile, _selectedRank);
+        else
+            _highlighter.ClearSelection();
+    }
+
+    private bool IsSelectable(int file, int rank)
+    {
+        BoardState board = _boardView.CurrentBoard;
+        if (board == null) return false;
+
+        Piece piece = board.At(file, rank);
+        return !piece.IsEmpty && _session.IsMyPiece(piece.Color);
+    }
 }

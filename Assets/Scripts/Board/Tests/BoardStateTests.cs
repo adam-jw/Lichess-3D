@@ -74,4 +74,12 @@ public class BoardStateTests
         Assert.AreEqual(PieceColor.White, b.At("h8").Color);
         Assert.IsTrue(b.At("g7").IsEmpty);
     }
+    [Test]
+    public void SideToMove_StartsWhite_AlternatesByPly()
+    {
+        Assert.AreEqual(PieceColor.White, BoardState.SideToMove(0)); // start
+        Assert.AreEqual(PieceColor.Black, BoardState.SideToMove(1)); // after 1. e4
+        Assert.AreEqual(PieceColor.White, BoardState.SideToMove(2)); // after 1...c5
+        Assert.AreEqual(PieceColor.Black, BoardState.SideToMove(3));
+    }
 }

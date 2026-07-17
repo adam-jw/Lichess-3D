@@ -8,6 +8,11 @@ public class BoardState
     // Ex: square "e2" is _squares[4, 1].
     private readonly Piece[,] _squares = new Piece[8, 8];
 
+    // Whose move it is after # of moves (e.g. e2e4) from start
+    // 0 moves = game start = White to move; 1 = Black's turn, and so on
+    public static PieceColor SideToMove(int moves) =>
+        (moves % 2 == 0) ? PieceColor.White : PieceColor.Black;
+
     public Piece At(int file, int rank) => _squares[file, rank];
 
     // for readable tests and debugging e.g. At("e4")
