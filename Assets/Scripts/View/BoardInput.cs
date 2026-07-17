@@ -12,6 +12,8 @@ public class BoardInput : MonoBehaviour
     private bool _hasSelection;
     private int _selectedFile, _selectedRank;
 
+    private bool _pressWasOnSelected;
+
     private void Awake()
     {
         if (_camera == null)
@@ -37,10 +39,16 @@ public class BoardInput : MonoBehaviour
             return;
         }
 
+        // Needed for deselect logic: Was this piece already selected? 
+        _pressWasOnSelected = _hasSelection && file == _selectedFile && rank == _selectedRank;
+
         BoardState board = _boardView.CurrentBoard;
 
         if (_hasSelection)
         {
+            if (_pressWasOnSelected)
+                return;   // pressing a selected piece: mouse-up decides deselect or drag
+
             Piece selected = board.At(_selectedFile, _selectedRank);
             Piece clicked = board.At(file, rank);
 
@@ -80,10 +88,14 @@ public class BoardInput : MonoBehaviour
         if (!TryGetClickedSquare(out int file, out int rank))
             return;   // released off the board; keep the selection, ignore
 
-        // Mouse released on the origin square = CLICK
-        // stay selected and wait for second click to name the destination
+        // Released on the origin square = click, not drag
         if (file == _selectedFile && rank == _selectedRank)
+        {
+            if (_pressWasOnSelected)
+                _hasSelection = false;   // re-click on selected piece -> DESELECT
+            // else: this click created the selection -> stay selected
             return;
+        }
 
         // Released somewhere else = DRAG -> make move now
         CompleteMove(file, rank);
