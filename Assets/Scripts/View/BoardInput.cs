@@ -33,6 +33,13 @@ public class BoardInput : MonoBehaviour
 
     private void HandleMouseDown()
     {
+        if (!_boardView.IsAtLive)
+        {
+            _boardView.JumpToLive();
+            _hasSelection = false;   // don't carry a stale selection into the live view
+            return;
+        }
+
         if (!TryGetClickedSquare(out int file, out int rank))
         {
             _hasSelection = false;   // clicked off the board -> cancel
@@ -173,6 +180,8 @@ public class BoardInput : MonoBehaviour
 
     private bool IsSelectable(int file, int rank)
     {
+        if (!_boardView.IsAtLive) return false;   // reviewing history; nothing is selectable
+
         BoardState board = _boardView.CurrentBoard;
         if (board == null) return false;
 

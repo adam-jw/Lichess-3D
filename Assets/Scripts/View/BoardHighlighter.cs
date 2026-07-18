@@ -26,14 +26,26 @@ public class BoardHighlighter : MonoBehaviour
 
     private void OnEnable()
     {
-        if (_session != null)
-            _session.OnMovesReceived += HandleMovesReceived;
+        if (_boardView != null)
+            _boardView.OnViewedMoveChanged += HandleViewedMove;
     }
 
     private void OnDisable()
     {
-        if (_session != null)
-            _session.OnMovesReceived -= HandleMovesReceived;
+        if (_boardView != null)
+            _boardView.OnViewedMoveChanged -= HandleViewedMove;
+    }
+
+    // Follows the *displayed* position, so the highlight tracks wherever you've scrolled
+    private void HandleViewedMove(string move)
+    {
+        if (string.IsNullOrEmpty(move)) { ClearLayer(HighlightLayer.LastMove); return; }
+
+        if (TryParseSquare(move, 0, out int ff, out int fr) &&
+            TryParseSquare(move, 2, out int tf, out int tr))
+            SetLayer(HighlightLayer.LastMove, _lastMoveColor, (ff, fr), (tf, tr));
+        else
+            ClearLayer(HighlightLayer.LastMove);
     }
 
     // ---------- Intent API (called by BoardInput) ----------

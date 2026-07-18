@@ -51,9 +51,22 @@ public class BoardView : MonoBehaviour
     private BoardState _currentBoard;      // logical truth; updated the instant a move arrives
     public BoardState CurrentBoard => _currentBoard;
 
-    private string _renderedMoves;         // moves string of the last state shown (null = none yet)
     private Coroutine _activeTween;         // in-flight slide, if any
     private readonly List<GameObject> _spawned = new List<GameObject>();   // current on-board piece objects
+
+
+    // ----- History / navigation -----
+    [Header("History")]
+    [SerializeField] private bool _snapToLiveOnNewMove = true;   // jump to present if a move arrives while reviewing
+
+    private string _liveMoves;      // latest full moves string from the stream (null = none yet)
+    private int _viewedMoveCount;   // how many moves are displayed (cursor); == live count when at present
+
+    // Announces the move token that produced the displayed position (highlighter listens)
+    public event System.Action<string> OnViewedMoveChanged;
+
+    public int LiveMoveCount => Tokenize(_liveMoves).Length;
+    public bool IsAtLive => _viewedMoveCount == LiveMoveCount;
 
     private void Awake()
     {
@@ -178,28 +191,49 @@ public class BoardView : MonoBehaviour
 
     private void HandleMovesReceived(string moves)
     {
-        BoardState newBoard = BoardState.FromMoves(moves);
+        string previousLive = _liveMoves;
+        bool wasAtLive = IsAtLive;   // showing the present before this update?
 
-        // Finish any in-flight moves instantly before handling the next update
-        if (_activeTween != null)
+        _liveMoves = moves;
+        StopActiveTween();           // settle any in-flight slide before deciding
+
+        if (wasAtLive)
         {
-            StopCoroutine(_activeTween);
-            _activeTween = null;
-            Render(_currentBoard);   // snap the interrupted move to its destination
+            // Go forward with the game; animate a clean single move.
+            _viewedMoveCount = LiveMoveCount;
+            BoardState newBoard = BoardState.FromMoves(moves);
+
+            if (IsSingleNewMove(previousLive, moves, out int ff, out int fr, out int tf, out int tr))
+                AnimateThenRender(ff, fr, tf, tr, newBoard);
+            else
+                Render(newBoard);
+
+            RaiseViewedMoveChanged();
         }
-
-        // Animate only when this state is exactly one move past the one we last showed
-        if (IsSingleNewMove(_renderedMoves, moves,
-                out int fromFile, out int fromRank, out int toFile, out int toRank))
-            AnimateThenRender(fromFile, fromRank, toFile, toRank, newBoard);
-        else
-            Render(newBoard);
-
-        _renderedMoves = moves;
+        else if (_snapToLiveOnNewMove || !IsForwardExtension(previousLive, moves))
+        {
+            // Viewing old move, but the toggle says snap, or timeline diverged -> snap to present
+            _viewedMoveCount = LiveMoveCount;
+            RefreshViewedPosition();
+        }
+        // else: reviewing an extension with snap off -> stay put; live advances underneath
     }
 
-    // True if 'moves' is 'prev' plus exactly one more token (prev being a prefix)
-    // Outputs the from/to squares of that one new move.
+    // "e2e4" / "e7e8q" -> squares. False if malformed or off-board
+    private static bool TryParseMove(string move, out int fromFile, out int fromRank,
+                                                  out int toFile, out int toRank)
+    {
+        fromFile = fromRank = toFile = toRank = -1;
+        if (move == null || move.Length < 4) return false;
+
+        fromFile = move[0] - 'a'; fromRank = move[1] - '1';
+        toFile = move[2] - 'a'; toRank = move[3] - '1';
+        return fromFile >= 0 && fromFile < 8 && fromRank >= 0 && fromRank < 8
+            && toFile >= 0 && toFile < 8 && toRank >= 0 && toRank < 8;
+    }
+
+    // True if 'moves' is 'prev' plus exactly one more token
+    // Outputs the from/to squares of that one new move
     private static bool IsSingleNewMove(string prev, string moves,
         out int fromFile, out int fromRank, out int toFile, out int toRank)
     {
@@ -217,15 +251,8 @@ public class BoardView : MonoBehaviour
                 return false;   // histories diverged -> snap
 
         string move = newTokens[newTokens.Length - 1]; 
-        if (move.Length < 4)
-            return false;
 
-        fromFile = move[0] - 'a';
-        fromRank = move[1] - '1';
-        toFile = move[2] - 'a';
-        toRank = move[3] - '1';
-        return fromFile >= 0 && fromFile < 8 && fromRank >= 0 && fromRank < 8
-            && toFile >= 0 && toFile < 8 && toRank >= 0 && toRank < 8;
+        return TryParseMove(move, out fromFile, out fromRank, out toFile, out toRank);
     }
 
     private static string[] Tokenize(string moves) =>
@@ -290,5 +317,86 @@ public class BoardView : MonoBehaviour
                 return go;
         }
         return null;
+    }
+
+
+    // ----- History/Navigation -----
+    public void StepBack(bool animate = true)
+    {
+        if (_viewedMoveCount <= 0) return;
+        StopActiveTween();
+
+        string undone = ViewedLastMove();   // the move that produced the current position
+        _viewedMoveCount--;
+        BoardState target = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));
+
+        // Reversed: move the piece from its destination back to its origin.
+        if (animate && TryParseMove(undone, out int ff, out int fr, out int tf, out int tr))
+            AnimateThenRender(tf, tr, ff, fr, target);
+        else
+            Render(target);
+
+        RaiseViewedMoveChanged();
+    }
+
+    public void StepForward(bool animate = true)
+    {
+        if (_viewedMoveCount >= LiveMoveCount) return;
+        StopActiveTween();
+
+        _viewedMoveCount++;
+        string move = ViewedLastMove();     // the move we just stepped onto
+        BoardState target = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));
+
+        if (animate && TryParseMove(move, out int ff, out int fr, out int tf, out int tr))
+            AnimateThenRender(ff, fr, tf, tr, target);
+        else
+            Render(target);
+
+        RaiseViewedMoveChanged();
+    }
+
+    public void JumpToStart() { StopActiveTween(); _viewedMoveCount = 0; RefreshViewedPosition(); }
+    public void JumpToLive() { StopActiveTween(); _viewedMoveCount = LiveMoveCount; RefreshViewedPosition(); }
+
+    private void StopActiveTween()
+    {
+        if (_activeTween == null) return;
+        StopCoroutine(_activeTween);
+        _activeTween = null;
+        Render(_currentBoard);   // snap the interrupted slide to its committed destination
+    }
+
+    // Snap-render whatever the cursor points at (manual nav is instant, not tweened)
+    private void RefreshViewedPosition()
+    {
+        Render(BoardState.FromMoves(PrefixMoves(_viewedMoveCount)));
+        RaiseViewedMoveChanged();
+    }
+
+    private void RaiseViewedMoveChanged() => OnViewedMoveChanged?.Invoke(ViewedLastMove());
+
+    private string ViewedLastMove()   // move token that produced the displayed position (null at start)
+    {
+        if (_viewedMoveCount <= 0) return null;
+        string[] tokens = Tokenize(_liveMoves);
+        return _viewedMoveCount <= tokens.Length ? tokens[_viewedMoveCount - 1] : null;
+    }
+
+    private string PrefixMoves(int count)   // first 'count' tokens rejoined ("" -> starting position)
+    {
+        string[] tokens = Tokenize(_liveMoves);
+        if (count >= tokens.Length) return _liveMoves ?? "";
+        return string.Join(" ", tokens, 0, count);
+    }
+
+    private static bool IsForwardExtension(string prev, string moves)   // prev is a token-wise prefix of moves
+    {
+        string[] p = Tokenize(prev);
+        string[] m = Tokenize(moves);
+        if (m.Length < p.Length) return false;
+        for (int i = 0; i < p.Length; i++)
+            if (p[i] != m[i]) return false;
+        return true;
     }
 }
