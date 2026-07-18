@@ -8,6 +8,8 @@ public class LichessGameSession : MonoBehaviour
     [SerializeField] private LichessAuthManager _authManager;
     [SerializeField] private LichessClient _client;
     [SerializeField] private LichessEventStream _eventStream;
+    [SerializeField] private float _finishGraceSeconds = 3f;   // wait this long for the board stream to close itself
+    private Coroutine _finishGrace;
 
     // Created per game, destroyed at game end
     private LichessBoardStream _boardStream;
@@ -141,17 +143,38 @@ public class LichessGameSession : MonoBehaviour
         EndGame(gameEnd);
     }
 
-    // Lichess's out-of-band confirmation on the account event stream 
-    // Usually redundant; proof of real finish rather than a dropped socket
+    // Lichess's out-of-band confirmation on the account event stream
+    // ADVISORY ONLY: board stream still owes the FINAL gameState (mating
+    // move + terminal status); Lichess closes that stream itself once game ends
+    // Aborting here would discard bytes not yet read
     private void HandleGameFinish(GameEventInfo game)
     {
         if (!IsGameActive || game.gameId != CurrentGameId)
             return;
 
-        _sawTerminalStatus = true;
+        _sawTerminalStatus = true;   // proof the game really ended, even if we never see the final state
 
-        if (_boardStream != null && _boardStream.IsStreaming)
-            _boardStream.StopStream();   // -> OnStreamEnded -> HandleStreamEnded
+        if (_finishGrace == null)
+            _finishGrace = StartCoroutine(CloseBoardStreamAfterGrace());
+    }
+
+    private System.Collections.IEnumerator CloseBoardStreamAfterGrace()
+    {
+        float deadline = Time.time + _finishGraceSeconds;
+
+        // Normal path: server closes, HandleStreamEnded runs, IsGameActive goes false, loop exits
+        while (Time.time < deadline && IsGameActive &&
+               _boardStream != null && _boardStream.IsStreaming)
+            yield return null;
+
+        _finishGrace = null;
+
+        if (IsGameActive && _boardStream != null && _boardStream.IsStreaming)
+        {
+            Debug.LogWarning("Session: board stream still open " + _finishGraceSeconds +
+                             "s after gameFinish; forcing close.");
+            _boardStream.StopStream();
+        }
     }
 
     private void EndGame(GameEndReason reason)
@@ -160,6 +183,12 @@ public class LichessGameSession : MonoBehaviour
             return;
 
         IsGameActive = false;
+
+        if (_finishGrace != null)
+        {
+            StopCoroutine(_finishGrace);
+            _finishGrace = null;
+        }
 
         if (_boardStream != null)
         {
