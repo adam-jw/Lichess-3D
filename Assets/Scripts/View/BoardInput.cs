@@ -14,6 +14,10 @@ public class BoardInput : MonoBehaviour
 
     private bool _pressWasOnSelected;
 
+    private bool _hasPremove;
+    private string _premoveUci;
+    private int _preFromFile, _preFromRank, _preToFile, _preToRank;
+
     private void Awake()
     {
         if (_camera == null)
@@ -29,6 +33,39 @@ public class BoardInput : MonoBehaviour
 
         UpdateHoverHighlight();
         UpdateSelectionHighlight();
+        UpdatePremoveHighlight();
+    }
+
+    private void OnEnable()
+    {
+        if (_session == null) return;
+        _session.OnMyTurnBegan += HandleMyTurnBegan;
+        _session.OnGameEnded += HandleGameEnded;
+    }
+
+    private void OnDisable()
+    {
+        if (_session == null) return;
+        _session.OnMyTurnBegan -= HandleMyTurnBegan;
+        _session.OnGameEnded -= HandleGameEnded;
+    }
+
+    private void HandleMyTurnBegan()
+    {
+        if (!_hasPremove) return;
+
+        string uci = _premoveUci;
+        ClearPremove();                 // consumed on send, accepted or rejected
+        Debug.Log("Firing premove: " + uci);
+        _session.SendMove(uci);
+    }
+
+    private void HandleGameEnded(GameEndReason reason, string status) => ClearPremove();
+
+    private void ClearPremove()
+    {
+        _hasPremove = false;
+        _premoveUci = null;
     }
 
     private void HandleMouseDown()
@@ -39,6 +76,9 @@ public class BoardInput : MonoBehaviour
             _hasSelection = false;   // don't carry a stale selection into the live view
             return;
         }
+
+        if (_hasPremove)
+            ClearPremove();   // any click cancels a queued premove
 
         if (!TryGetClickedSquare(out int file, out int rank))
         {
@@ -112,16 +152,27 @@ public class BoardInput : MonoBehaviour
     {
         string uci = SquareName(_selectedFile, _selectedRank) + SquareName(destFile, destRank);
 
-        // Temp handle for sending promotions to lichess: auto queen pawn on back rank
         BoardState board = _boardView.CurrentBoard;
         Piece moving = board.At(_selectedFile, _selectedRank);
         if (moving.Type == PieceType.Pawn && (destRank == 0 || destRank == 7))
             uci += "q";
 
+        int fromFile = _selectedFile, fromRank = _selectedRank;
         _hasSelection = false;
 
-        Debug.Log($"Sending move: {uci}");
-        _session.SendMove(uci);
+        if (_session.IsMyTurn)
+        {
+            Debug.Log($"Sending move: {uci}");
+            _session.SendMove(uci);
+            return;
+        }
+
+        // Opponent's turn -> queue move
+        _hasPremove = true;
+        _premoveUci = uci;
+        _preFromFile = fromFile; _preFromRank = fromRank;
+        _preToFile = destFile; _preToRank = destRank;
+        Debug.Log("Premove queued: " + uci);
     }
 
     private bool TryGetClickedSquare(out int file, out int rank)
@@ -176,6 +227,16 @@ public class BoardInput : MonoBehaviour
             _highlighter.SetSelection(_selectedFile, _selectedRank);
         else
             _highlighter.ClearSelection();
+    }
+
+    private void UpdatePremoveHighlight()
+    {
+        if (_highlighter == null) return;
+
+        if (_hasPremove)
+            _highlighter.SetPremove(_preFromFile, _preFromRank, _preToFile, _preToRank);
+        else
+            _highlighter.ClearPremove();
     }
 
     private bool IsSelectable(int file, int rank)

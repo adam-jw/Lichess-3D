@@ -132,6 +132,7 @@ GameObject:
   - component: {fileID: 168287088}
   - component: {fileID: 168287089}
   - component: {fileID: 168287090}
+  - component: {fileID: 168287091}
   m_Layer: 0
   m_Name: Board
   m_TagString: Untagged
@@ -151,11 +152,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 08517ebb46d7b5149a58c480022efd7b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BoardView
+  _session: {fileID: 785838380}
   squareSize: 1
   pieceScale: 8
-  _session: {fileID: 785838380}
   _moveDuration: 0.14
-  _hopHeight: 0.5
+  _hopHeight: 0.6
+  pieceScaleOverrides: []
+  pieceHopOverrides:
+  - type: 4
+    hopHeight: 0
+  - type: 3
+    hopHeight: 0
+  - type: 5
+    hopHeight: 0
   piecePrefabs:
   - type: 1
     color: 0
@@ -193,6 +202,7 @@ MonoBehaviour:
   - type: 6
     color: 1
     prefab: {fileID: 5245576311935972996, guid: 57cde1b76f89d92489a9f025c967433c, type: 3}
+  _snapToLiveOnNewMove: 1
 --- !u!4 &168287087
 Transform:
   m_ObjectHideFlags: 0
@@ -257,8 +267,24 @@ MonoBehaviour:
   _heightOffset: 0.02
   _hoverColor: {r: 0.94117653, g: 0.94117653, b: 0.94117653, a: 0.19607843}
   _selectableColor: {r: 0.5611036, g: 0.8604872, b: 0.90943396, a: 0.35}
-  _selectionColor: {r: 0.32135987, g: 0.6679245, b: 0.36462462, a: 0.5}
+  _selectionColor: {r: 0.08951937, g: 0.4792453, b: 0.13823509, a: 0.5411765}
   _lastMoveColor: {r: 0.95, g: 0.85, b: 0.25, a: 0.35}
+  _premoveColor: {r: 0.6778052, g: 0.45917407, b: 0.93962264, a: 0.45}
+--- !u!114 &168287091
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 168287085}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42ab7b45f26619b46952c274e612ebb1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HistoryInput
+  _boardView: {fileID: 168287086}
+  _holdDelay: 0.6
+  _repeatInterval: 0.05
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -295,8 +321,8 @@ Camera:
   m_GameObject: {fileID: 330585543}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.8136026, g: 1, b: 0.76792455, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -431,10 +457,10 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
-    m_Type: 0
+    m_Type: 2
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 0.863
+    m_Strength: 0.354
     m_Bias: 0.05
     m_NormalBias: 0.4
     m_NearPlane: 0.2
@@ -487,13 +513,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 410087039}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7850944, y: -0.15077695, z: 0.21036538, w: 0.56270736}
-  m_LocalPosition: {x: -0.44, y: 4.94, z: -0.9}
+  m_LocalRotation: {x: 0.6753706, y: -0.20761934, z: 0.19846173, w: 0.6792509}
+  m_LocalPosition: {x: -0.69, y: 7.68, z: -0.65}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 108.739, y: -30, z: 0}
+  m_LocalEulerAnglesHint: {x: 90.806, y: 96.276, z: 129.651}
 --- !u!114 &410087042
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -613,6 +639,7 @@ MonoBehaviour:
   _authManager: {fileID: 785838376}
   _client: {fileID: 785838378}
   _eventStream: {fileID: 785838379}
+  _finishGraceSeconds: 3
 --- !u!114 &785838381
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -33,6 +33,7 @@ public class LichessGameSession : MonoBehaviour
     public event System.Action<string> OnMovesReceived;              // for BoardView
     public event System.Action<GameStateEvent> OnGameStateReceived;  // clocks, result, etc.
     public event System.Action<GameEndReason, string> OnGameEnded;   // reason, final status
+    public event System.Action OnMyTurnBegan;
 
     private void OnEnable()
     {
@@ -83,12 +84,19 @@ public class LichessGameSession : MonoBehaviour
 
     private void HandleGameState(GameStateEvent state)
     {
+        bool wasMyTurn = IsMyTurn;          // sampled BEFORE we advance side-to-move
         SideToMove = BoardState.SideToMove(CountMoves(state.moves));
+
+        bool terminal = GameStatus.IsTerminal(state.status);
 
         OnGameStateReceived?.Invoke(state);
         OnMovesReceived?.Invoke(state.moves);
 
-        if (GameStatus.IsTerminal(state.status))
+        // Rising edge only, & never on the game-ending state
+        if (!terminal && !wasMyTurn && IsMyTurn)
+            OnMyTurnBegan?.Invoke();
+
+        if (terminal)
         {
             _sawTerminalStatus = true;
             _finalStatus = state.status;

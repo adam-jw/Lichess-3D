@@ -5,7 +5,7 @@ using UnityEngine;
 
 public class BoardHighlighter : MonoBehaviour
 {
-    public enum HighlightLayer { Hover, Selection, LastMove }   // add Premove, LegalMove, Check later
+    public enum HighlightLayer { Hover, Selection, LastMove, Premove }   // add LegalMove, Check later
 
     [SerializeField] private BoardView _boardView;              // shared square->local mapping
     [SerializeField] private LichessGameSession _session;
@@ -13,10 +13,12 @@ public class BoardHighlighter : MonoBehaviour
     [SerializeField] private float _heightOffset = 0.02f;       // float above the board, dodge z-fighting
 
     [Header("Palette")]
-    [SerializeField] private Color _hoverColor = new Color(1f, 1f, 1f, 0.12f);      // subtle, anywhere
-    [SerializeField] private Color _selectableColor = new Color(0.4f, 0.9f, 0.4f, 0.35f); // stronger, your piece
-    [SerializeField] private Color _selectionColor = new Color(0.3f, 0.7f, 1f, 0.5f);   // selected piece
-    [SerializeField] private Color _lastMoveColor = new Color(0.95f, 0.85f, 0.25f, 0.35f); // shows last move
+    [SerializeField] private Color _hoverColor = new Color(1f, 1f, 1f, 0.12f);      
+    [SerializeField] private Color _selectableColor = new Color(0.4f, 0.9f, 0.4f, 0.35f);
+    [SerializeField] private Color _selectionColor = new Color(0.3f, 0.7f, 1f, 0.5f);   
+    [SerializeField] private Color _lastMoveColor = new Color(0.95f, 0.85f, 0.25f, 0.35f); 
+    [SerializeField] private Color _premoveColor = new Color(0.65f, 0.4f, 0.95f, 0.45f);
+
 
     // Active quads per layer, plus a shared pool of hidden quads to reuse, so a
     // moving hover square doesn't instantiate/destroy a quad every frame
@@ -59,6 +61,11 @@ public class BoardHighlighter : MonoBehaviour
         SetLayer(HighlightLayer.Selection, _selectionColor, (file, rank));
 
     public void ClearSelection() => ClearLayer(HighlightLayer.Selection);
+
+    public void SetPremove(int fromFile, int fromRank, int toFile, int toRank) =>
+        SetLayer(HighlightLayer.Premove, _premoveColor, (fromFile, fromRank), (toFile, toRank));
+
+    public void ClearPremove() => ClearLayer(HighlightLayer.Premove);
 
     // ---------- Game-state layer: last move pulled from the stream ----------
 
