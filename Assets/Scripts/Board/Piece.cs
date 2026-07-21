@@ -1,3 +1,5 @@
+using System;
+
 public enum PieceColor
 {
     White,
@@ -27,4 +29,15 @@ public readonly struct Piece
     }
 
     public bool IsEmpty => Type == PieceType.None;
+}
+
+[Flags]
+public enum CastlingRights
+{
+    None = 0,
+    WhiteKingside = 1,
+    WhiteQueenside = 2,
+    BlackKingside = 4,
+    BlackQueenside = 8,
+    All = WhiteKingside | WhiteQueenside | BlackKingside | BlackQueenside,
 }
