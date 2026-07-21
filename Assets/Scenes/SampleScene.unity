@@ -154,17 +154,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BoardView
   _session: {fileID: 785838380}
   squareSize: 1
-  pieceScale: 8
+  pieceScale: 7.5
   _moveDuration: 0.14
-  _hopHeight: 0.6
+  _hopHeight: 0
   pieceScaleOverrides: []
   pieceHopOverrides:
-  - type: 4
-    hopHeight: 0
-  - type: 3
-    hopHeight: 0
-  - type: 5
-    hopHeight: 0
+  - type: 2
+    hopHeight: 0.6
   piecePrefabs:
   - type: 1
     color: 0

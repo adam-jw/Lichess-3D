@@ -14,14 +14,8 @@ public class BoardState
         (moves % 2 == 0) ? PieceColor.White : PieceColor.Black;
 
     public Piece At(int file, int rank) => _squares[file, rank];
-
-    // for readable tests and debugging e.g. At("e4")
-    public Piece At(string square)
-    {
-        int file = square[0] - 'a';
-        int rank = square[1] - '1';
-        return _squares[file, rank];
-    }
+    public Piece At(Square square) => _squares[square.File, square.Rank];
+    public Piece At(string square) => At(new Square(square));
 
     // Back-rank piece order, files a->h, Identical for both colors
     private static readonly PieceType[] BackRank =
@@ -44,23 +38,18 @@ public class BoardState
         }
     }
 
-    public void ApplyUci(string move)
+    public void ApplyUci(string move) => ApplyMove(Move.FromUci(move));
+
+    public void ApplyMove(Move move)
     {
-        if (move == null || (move.Length != 4 && move.Length != 5))
-            throw new ArgumentException($"Malformed UCI move: '{move}'");
-
-        int fromFile = move[0] - 'a';
-        int fromRank = move[1] - '1';
-        int toFile = move[2] - 'a';
-        int toRank = move[3] - '1';
-
-        if (!InBounds(fromFile) || !InBounds(fromRank) ||
-            !InBounds(toFile) || !InBounds(toRank))
-            throw new ArgumentException($"UCI move off the board: '{move}'");
+        int fromFile = move.From.File;
+        int fromRank = move.From.Rank;
+        int toFile = move.To.File;
+        int toRank = move.To.Rank;
 
         Piece moving = _squares[fromFile, fromRank];
         if (moving.IsEmpty)
-            throw new ArgumentException($"No piece on origin of '{move}' (desync?)");
+            throw new ArgumentException($"No piece on origin of '{move.ToUci()}' (desync?)");
 
         bool isCastle = moving.Type == PieceType.King && Math.Abs(toFile - fromFile) >= 2;
 
@@ -68,7 +57,7 @@ public class BoardState
                            && fromFile != toFile
                            && _squares[toFile, toRank].IsEmpty;
 
-        bool isPromotion = move.Length == 5;    // e.g. e7e8q
+        bool isPromotion = move.Promotion != PieceType.None;
 
         if (isCastle)
         {
@@ -95,20 +84,9 @@ public class BoardState
 
         // Swap pawn in case of promotion, otherwise place moving piece on target
         _squares[toFile, toRank] = isPromotion
-            ? new Piece(PromotionFromChar(move[4]), moving.Color)
+            ? new Piece(move.Promotion, moving.Color)
             : moving;
     }
-
-    private static bool InBounds(int index) => index >= 0 && index < 8;
-
-    private static PieceType PromotionFromChar(char c) => c switch
-    {
-        'q' => PieceType.Queen,
-        'r' => PieceType.Rook,
-        'b' => PieceType.Bishop,
-        'n' => PieceType.Knight,
-        _ => throw new ArgumentException($"Bad promotion piece '{c}'"),
-    };
 
     public static BoardState FromMoves(string moves)
     {
