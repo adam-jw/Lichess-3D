@@ -1,6 +1,6 @@
 using System;
 
-public class BoardState
+public partial class BoardState
 {
     // Squares indexed [file, rank] 0–7.
     //   file 0 = a, file 7 = h
@@ -119,6 +119,166 @@ public class BoardState
             board.ApplyUci(uci);
 
         return board;
+    }
+
+    public static BoardState FromFen(string fen)
+    {
+        if (string.IsNullOrWhiteSpace(fen))
+            throw new ArgumentException("Empty FEN");
+
+        string[] fields = fen.Split(' ');
+        if (fields.Length < 4)
+            throw new ArgumentException($"FEN needs at least 4 fields: '{fen}'");
+
+        var board = new BoardState();   // array defaults to empty
+
+        // Field 1: placement, listed rank 8 first, each rank a->h.
+        string[] ranks = fields[0].Split('/');
+        if (ranks.Length != 8)
+            throw new ArgumentException($"FEN placement needs 8 ranks: '{fields[0]}'");
+
+        for (int i = 0; i < 8; i++)
+        {
+            int rank = 7 - i;           // FEN's first rank string is rank 8 -> internal rank 7
+            int file = 0;
+            foreach (char c in ranks[i])
+            {
+                if (char.IsDigit(c))
+                    file += c - '0';    // run of empty squares
+                else
+                {
+                    if (file > 7)
+                        throw new ArgumentException($"FEN rank overflows: '{ranks[i]}'");
+                    board._squares[file, rank] = PieceFromFenChar(c);
+                    file++;
+                }
+            }
+            if (file != 8)
+                throw new ArgumentException($"FEN rank wrong length: '{ranks[i]}'");
+        }
+
+        // Field 2: active color
+        board.ActiveColor = fields[1] == "b" ? PieceColor.Black : PieceColor.White;
+
+        // Field 3: castling rights
+        board.Castling = CastlingRights.None;
+        if (fields[2] != "-")
+            foreach (char c in fields[2])
+                board.Castling |= c switch
+                {
+                    'K' => CastlingRights.WhiteKingside,
+                    'Q' => CastlingRights.WhiteQueenside,
+                    'k' => CastlingRights.BlackKingside,
+                    'q' => CastlingRights.BlackQueenside,
+                    _ => throw new ArgumentException($"Bad castling char '{c}'"),
+                };
+
+        // Field 4: en passant target square, or "-"
+        board.EnPassantTarget = fields[3] == "-" ? (Square?)null : new Square(fields[3]);
+
+        // Fields 5-6 (halfmove clock, fullmove number) ignored
+        return board;
+    }
+
+    private static Piece PieceFromFenChar(char c)
+    {
+        PieceColor color = char.IsUpper(c) ? PieceColor.White : PieceColor.Black;
+        PieceType type = char.ToLower(c) switch
+        {
+            'p' => PieceType.Pawn,
+            'n' => PieceType.Knight,
+            'b' => PieceType.Bishop,
+            'r' => PieceType.Rook,
+            'q' => PieceType.Queen,
+            'k' => PieceType.King,
+            _ => throw new ArgumentException($"Bad FEN piece char '{c}'"),
+        };
+        return new Piece(type, color);
+    }
+
+    // Whether 'target' is attacked by any piece of color 'byColor' 
+    // Irrelevant of occupant of 'target'
+    public bool IsAttacked(Square target, PieceColor byColor)
+    {
+        for (int file = 0; file < 8; file++)
+            for (int rank = 0; rank < 8; rank++)
+            {
+                Piece p = _squares[file, rank];
+                if (p.IsEmpty || p.Color != byColor) continue;
+                if (AttacksSquare(new Square(file, rank), p, target)) return true;
+            }
+        return false;
+    }
+
+    private bool AttacksSquare(Square from, Piece piece, Square target)
+    {
+        int df = target.File - from.File;
+        int dr = target.Rank - from.Rank;
+
+        switch (piece.Type)
+        {
+            case PieceType.Pawn:
+                // Attacks the two forward diagonals ONLY. The push is not an attack.
+                int forward = piece.Color == PieceColor.White ? 1 : -1;
+                return dr == forward && Math.Abs(df) == 1;
+
+            case PieceType.Knight:
+                int adf = Math.Abs(df), adr = Math.Abs(dr);
+                return (adf == 1 && adr == 2) || (adf == 2 && adr == 1);
+
+            case PieceType.King:
+                return Math.Max(Math.Abs(df), Math.Abs(dr)) == 1;
+
+            case PieceType.Bishop:
+                return Math.Abs(df) == Math.Abs(dr) && df != 0 && PathClear(from, target);
+
+            case PieceType.Rook:
+                return (df == 0) != (dr == 0) && PathClear(from, target);
+
+            case PieceType.Queen:
+                bool diagonal = Math.Abs(df) == Math.Abs(dr) && df != 0;
+                bool straight = (df == 0) != (dr == 0);
+                return (diagonal || straight) && PathClear(from, target);
+
+            default:
+                return false;
+        }
+    }
+
+    // Whether squares between (not including) from and to are empty 
+    // Assumes the two are aligned (diagonal or orthogonal)
+    private bool PathClear(Square from, Square to)
+    {
+        int stepF = Math.Sign(to.File - from.File);
+        int stepR = Math.Sign(to.Rank - from.Rank);
+
+        int f = from.File + stepF;
+        int r = from.Rank + stepR;
+        while (f != to.File || r != to.Rank)
+        {
+            if (!_squares[f, r].IsEmpty) return false;
+            f += stepF;
+            r += stepR;
+        }
+        return true;
+    }
+
+    public Square? FindKing(PieceColor color)
+    {
+        for (int file = 0; file < 8; file++)
+            for (int rank = 0; rank < 8; rank++)
+            {
+                Piece p = _squares[file, rank];
+                if (p.Type == PieceType.King && p.Color == color)
+                    return new Square(file, rank);
+            }
+        return null;
+    }
+
+    public bool IsInCheck(PieceColor color)
+    {
+        Square? king = FindKing(color);
+        return king.HasValue && IsAttacked(king.Value, Opposite(color));
     }
 
     private void UpdateCastlingRights(Piece moving, Square from, Square to)

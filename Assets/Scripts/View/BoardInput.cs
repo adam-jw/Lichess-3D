@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 // Turns a mouse click into a board square. Two cases: hit a piece's collider
 // (square checked via PieceRef), or fall through to the board plane (square itself)
@@ -13,6 +14,10 @@ public class BoardInput : MonoBehaviour
     private int _selectedFile, _selectedRank;
 
     private bool _pressWasOnSelected;
+
+    private int _dotsForFile = -1, _dotsForRank = -1;   // which square the cached dots belong to
+    private readonly List<Square> _legalDots = new List<Square>();
+    private readonly List<Square> _legalCaptures = new List<Square>();
 
     private bool _hasPremove;
     private string _premoveUci;
@@ -33,6 +38,7 @@ public class BoardInput : MonoBehaviour
 
         UpdateHoverHighlight();
         UpdateSelectionHighlight();
+        UpdateLegalMoveHighlight();
         UpdatePremoveHighlight();
     }
 
@@ -178,7 +184,12 @@ public class BoardInput : MonoBehaviour
     private bool TryGetClickedSquare(out int file, out int rank)
     {
         file = rank = -1;
-        Ray ray = _camera.ScreenPointToRay(Input.mousePosition);
+
+        Vector3 mouse = Input.mousePosition;
+        if (!float.IsFinite(mouse.x) || !float.IsFinite(mouse.y))
+            return false;
+
+        Ray ray = _camera.ScreenPointToRay(mouse);
 
         // Case 1: did we hit a piece? Get square from PieceRef
         if (Physics.Raycast(ray, out RaycastHit hit))
@@ -229,6 +240,44 @@ public class BoardInput : MonoBehaviour
             _highlighter.ClearSelection();
     }
 
+    private void UpdateLegalMoveHighlight()
+    {
+        if (_highlighter == null) return;
+
+        if (!_hasSelection || !_boardView.IsAtLive)
+        {
+            if (_dotsForFile != -1)
+            {
+                _highlighter.ClearLegalMoves();
+                _highlighter.ClearLegalCaptures();
+                _dotsForFile = _dotsForRank = -1;
+            }
+            return;
+        }
+
+        // Regenerate only when the selected square actually changed
+        if (_selectedFile != _dotsForFile || _selectedRank != _dotsForRank)
+        {
+            _dotsForFile = _selectedFile;
+            _dotsForRank = _selectedRank;
+
+            _legalDots.Clear();
+            _legalCaptures.Clear();
+
+            BoardState board = _boardView.CurrentBoard;
+            foreach (Move m in board.LegalFrom(new Square(_selectedFile, _selectedRank)))
+            {
+                // Occupied target -> capture (Corners); empty -> regular move (Dot)
+                List<Square> bucket = board.At(m.To).IsEmpty ? _legalDots : _legalCaptures;
+                if (!bucket.Contains(m.To))   // promotions share a destination
+                    bucket.Add(m.To);
+            }
+
+            _highlighter.SetLegalMoves(_legalDots);
+            _highlighter.SetLegalCaptures(_legalCaptures);
+        }
+    }
+
     private void UpdatePremoveHighlight()
     {
         if (_highlighter == null) return;
@@ -249,4 +298,5 @@ public class BoardInput : MonoBehaviour
         Piece piece = board.At(file, rank);
         return !piece.IsEmpty && _session.IsMyPiece(piece.Color);
     }
+
 }

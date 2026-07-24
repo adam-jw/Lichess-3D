@@ -5,7 +5,20 @@ using UnityEngine;
 
 public class BoardHighlighter : MonoBehaviour
 {
-    public enum HighlightLayer { Hover, Selection, LastMove, Premove }   // add LegalMove, Check later
+    public enum HighlightLayer { Hover, Selection, LastMove, Premove, Check, LegalMove, LegalCapture }
+
+    public enum HighlightShape { Fill, Dot, Ring, Radial, Corners }
+
+    [System.Serializable]
+    public struct HighlightStyle
+    {
+        public Color color;
+        public HighlightShape shape;
+        [Range(0f, 1.4f)] public float radius;
+        [Range(0f, 1f)] public float innerRadius;
+        [Range(0.001f, 0.5f)] public float softness;
+        [Range(0.01f, 0.7f)] public float thickness;   // ring only
+    }
 
     [SerializeField] private BoardView _boardView;              // shared square->local mapping
     [SerializeField] private LichessGameSession _session;
@@ -19,6 +32,12 @@ public class BoardHighlighter : MonoBehaviour
     [SerializeField] private Color _lastMoveColor = new Color(0.95f, 0.85f, 0.25f, 0.35f); 
     [SerializeField] private Color _premoveColor = new Color(0.65f, 0.4f, 0.95f, 0.45f);
 
+    [Header("Check")]
+    [SerializeField] private HighlightStyle _checkStyle;
+
+    [Header("Legal moves")]
+    [SerializeField] private HighlightStyle _legalMoveStyle;
+    [SerializeField] private HighlightStyle _legalCaptureStyle;
 
     // Active quads per layer, plus a shared pool of hidden quads to reuse, so a
     // moving hover square doesn't instantiate/destroy a quad every frame
@@ -41,13 +60,27 @@ public class BoardHighlighter : MonoBehaviour
     // Follows the *displayed* position, so the highlight tracks wherever you've scrolled
     private void HandleViewedMove(string move)
     {
-        if (string.IsNullOrEmpty(move)) { ClearLayer(HighlightLayer.LastMove); return; }
-
-        if (TryParseSquare(move, 0, out int ff, out int fr) &&
-            TryParseSquare(move, 2, out int tf, out int tr))
+        if (string.IsNullOrEmpty(move)) ClearLayer(HighlightLayer.LastMove);
+        else if (TryParseSquare(move, 0, out int ff, out int fr) &&
+                 TryParseSquare(move, 2, out int tf, out int tr))
             SetLayer(HighlightLayer.LastMove, _lastMoveColor, (ff, fr), (tf, tr));
         else
             ClearLayer(HighlightLayer.LastMove);
+
+        RefreshCheck();   // check depends on the displayed board, not the move token
+    }
+
+    public void RefreshCheck()
+    {
+        BoardState b = _boardView != null ? _boardView.CurrentBoard : null;
+        if (b == null) { ClearLayer(HighlightLayer.Check); return; }
+
+        // Only the side to move can legally be in check; test that side
+        PieceColor side = b.ActiveColor;
+        if (b.IsInCheck(side) && b.FindKing(side) is Square king)
+            SetLayer(HighlightLayer.Check, _checkStyle, (king.File, king.Rank));
+        else
+            ClearLayer(HighlightLayer.Check);
     }
 
     // ---------- Intent API (called by BoardInput) ----------
@@ -89,6 +122,19 @@ public class BoardHighlighter : MonoBehaviour
 
     // Reconcile a layer's quads to exactly 'squares', in 'color'
     private void SetLayer(HighlightLayer layer, Color color, params (int file, int rank)[] squares)
+        => SetLayer(layer, FillStyle(color), squares);
+
+    private static HighlightStyle FillStyle(Color c) => new HighlightStyle
+    {
+        color = c,
+        shape = HighlightShape.Fill,
+        radius = 1f,
+        innerRadius = 0f,
+        softness = 0.05f,
+        thickness = 0.15f
+    };
+
+    private void SetLayer(HighlightLayer layer, HighlightStyle style, params (int file, int rank)[] squares)
     {
         if (_highlightPrefab == null || _boardView == null)
             return;
@@ -106,7 +152,13 @@ public class BoardHighlighter : MonoBehaviour
             GameObject quad = Take();
             quad.transform.localPosition = _boardView.SquareToLocal(file, rank) + Vector3.up * _heightOffset;
 
-            quad.GetComponent<Renderer>().material.SetColor("_BaseColor", color);
+            var mat = quad.GetComponent<Renderer>().material;
+            mat.SetColor("_BaseColor", style.color);
+            mat.SetFloat("_Shape", (float)(int)style.shape);
+            mat.SetFloat("_Radius", style.radius);
+            mat.SetFloat("_Inner", style.innerRadius);
+            mat.SetFloat("_Softness", style.softness);
+            mat.SetFloat("_Thickness", style.thickness);
 
             quads.Add(quad);
         }
@@ -117,6 +169,23 @@ public class BoardHighlighter : MonoBehaviour
         if (_active.TryGetValue(layer, out List<GameObject> quads))
             Recycle(quads);
     }
+
+    public void SetLegalMoves(IReadOnlyList<Square> squares) => SetSquares(HighlightLayer.LegalMove, _legalMoveStyle, squares);
+    public void SetLegalCaptures(IReadOnlyList<Square> squares) => SetSquares(HighlightLayer.LegalCapture, _legalCaptureStyle, squares);
+    public void ClearLegalMoves() => ClearLayer(HighlightLayer.LegalMove);
+    public void ClearLegalCaptures() => ClearLayer(HighlightLayer.LegalCapture);
+
+    private void SetSquares(HighlightLayer layer, HighlightStyle style, IReadOnlyList<Square> squares)
+    {
+        if (squares == null || squares.Count == 0) { ClearLayer(layer); return; }
+
+        var tuples = new (int, int)[squares.Count];
+        for (int i = 0; i < squares.Count; i++)
+            tuples[i] = (squares[i].File, squares[i].Rank);
+
+        SetLayer(layer, style, tuples);
+    }
+
 
     // ---------- Pool helpers ----------
 
