@@ -505,4 +505,18 @@ public class BoardStateTests
         var b = BoardState.FromFen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
         Assert.AreEqual(4085603, BoardState.Perft(b, 4));
     }
+
+    [Test]
+    public void Premove_OntoSquareOpponentJustBlocked_IsIllegal()
+    {
+        // You queue Rook a1-a8 while it's clear; Opponent drops a piece on a4
+        var board = BoardState.FromFen("8/8/8/8/n7/8/8/R3K2R w - - 0 1");
+        var premove = new Move(new Square("a1"), new Square("a8"));
+
+        bool legal = false;
+        foreach (Move m in board.LegalFrom(premove.From))
+            if (m.To == premove.To) { legal = true; break; }
+
+        Assert.IsFalse(legal);   // blocked at a4
+    }
 }

@@ -60,10 +60,36 @@ public class BoardInput : MonoBehaviour
     {
         if (!_hasPremove) return;
 
+        // Validate premove
+        var premove = new Move(
+            new Square(_preFromFile, _preFromRank),
+            new Square(_preToFile, _preToRank));
+
+        BoardState board = _boardView.CurrentBoard;
+        bool legal = IsPremoveLegal(board, premove);
+
         string uci = _premoveUci;
-        ClearPremove();                 // consumed on send, accepted or rejected
+        ClearPremove();   // consumed either way: fired, or dropped as invalid
+
+        if (!legal)
+        {
+            Debug.Log($"Premove {uci} dropped: not legal in the current position.");
+            return;
+        }
+
         Debug.Log("Firing premove: " + uci);
         _session.SendMove(uci);
+    }
+
+    private static bool IsPremoveLegal(BoardState board, Move premove)
+    {
+        Piece mover = board.At(premove.From);
+        if (mover.IsEmpty) return false;   // our piece was captured -> premove is dead
+
+        foreach (Move legal in board.LegalFrom(premove.From))
+            if (legal.To == premove.To)    // from is already fixed by LegalFrom(premove.From)
+                return true;
+        return false;
     }
 
     private void HandleGameEnded(GameEndReason reason, string status) => ClearPremove();
