@@ -519,4 +519,162 @@ public class BoardStateTests
 
         Assert.IsFalse(legal);   // blocked at a4
     }
+
+
+    //
+    // DescribeMove / PieceEdit Tests
+    //
+
+    private static List<string> EditStrings(IReadOnlyList<PieceEdit> edits)
+    {
+        var list = new List<string>();
+        foreach (PieceEdit e in edits) list.Add(e.ToString());
+        return list;
+    }
+
+    //
+    // DescribeMove: per-type expansions
+    //
+
+    [Test]
+    public void Describe_Quiet_IsSingleMove()
+    {
+        var b = BoardState.FromMoves("");
+        CollectionAssert.AreEqual(
+            new[] { "Move e2->e4" },
+            EditStrings(b.DescribeMove(Move.FromUci("e2e4"))));
+    }
+
+    [Test]
+    public void Describe_Capture_RemovesVictimThenMoves()
+    {
+        // Order matters: if the Move ran first it would overwrite d5, then Remove
+        // would destroy the ATTACKER. Remove-before-Move is the whole point.
+        var b = BoardState.FromMoves("e2e4 d7d5");
+        CollectionAssert.AreEqual(
+            new[] { "Remove d5", "Move e4->d5" },
+            EditStrings(b.DescribeMove(Move.FromUci("e4d5"))));
+    }
+
+    [Test]
+    public void Describe_EnPassant_RemovesBypassedPawnNotDestination()
+    {
+        // The removed pawn is on d5, not the empty destination d6.
+        var b = BoardState.FromMoves("e2e4 a7a6 e4e5 d7d5");
+        CollectionAssert.AreEqual(
+            new[] { "Remove d5", "Move e5->d6" },
+            EditStrings(b.DescribeMove(Move.FromUci("e5d6"))));
+    }
+
+    [Test]
+    public void Describe_CastleKingToRookNotation_ExpandsToKingAndRook()
+    {
+        // Token is e1h1, but the edits are the king to g1 and the rook to f1.
+        var b = BoardState.FromMoves("e2e4 e7e5 g1f3 b8c6 f1c4 g8f6");
+        CollectionAssert.AreEqual(
+            new[] { "Move e1->g1", "Move h1->f1" },
+            EditStrings(b.DescribeMove(Move.FromUci("e1h1"))));
+    }
+
+    [Test]
+    public void Describe_CastleStandardNotation_ExpandsIdentically()
+    {
+        // Same edits from the e1g1 encoding: notation never leaks into the output.
+        var b = BoardState.FromMoves("e2e4 e7e5 g1f3 b8c6 f1c4 g8f6");
+        CollectionAssert.AreEqual(
+            new[] { "Move e1->g1", "Move h1->f1" },
+            EditStrings(b.DescribeMove(Move.FromUci("e1g1"))));
+    }
+
+    [Test]
+    public void Describe_CastleQueenside_MovesRookToDFile()
+    {
+        var b = BoardState.FromFen("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        CollectionAssert.AreEqual(
+            new[] { "Move e1->c1", "Move a1->d1" },
+            EditStrings(b.DescribeMove(Move.FromUci("e1a1"))));
+    }
+
+    [Test]
+    public void Describe_Promotion_RemovesPawnThenSpawnsQueen()
+    {
+        // Identity breaks: the pawn object is destroyed, a queen is created.
+        var b = BoardState.FromFen("8/4P3/8/8/8/8/8/8 w - - 0 1");
+        CollectionAssert.AreEqual(
+            new[] { "Remove e7", "Spawn e8 WhiteQueen" },
+            EditStrings(b.DescribeMove(Move.FromUci("e7e8q"))));
+    }
+
+    [Test]
+    public void Describe_CapturePromotion_RemovesVictimAndPawnThenSpawns()
+    {
+        var b = BoardState.FromMoves("h2h4 a7a5 h4h5 a5a4 h5h6 a4a3 h6g7 a3b2");
+        CollectionAssert.AreEqual(
+            new[] { "Remove h8", "Remove g7", "Spawn h8 WhiteQueen" },
+            EditStrings(b.DescribeMove(Move.FromUci("g7h8q"))));
+    }
+
+    // DescribeMove: Applying the edit set the same way the view will must reproduce ApplyMove's placement
+    [Test]
+    public void Describe_MatchesApplyMove_AcrossMoveTypes()
+    {
+        AssertEditsMatchApplyMove_Game("e2e4 d7d5 e4d5");                              // quiet, capture
+        AssertEditsMatchApplyMove_Game("e2e4 a7a6 e4e5 d7d5 e5d6");                    // en passant
+        AssertEditsMatchApplyMove_Game("e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 e1h1");          // castle (king-to-rook)
+        AssertEditsMatchApplyMove_Game("e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 e1g1");          // castle (standard)
+        AssertEditsMatchApplyMove_Game("h2h4 a7a5 h4h5 a5a4 h5h6 a4a3 h6g7 a3b2 g7h8q"); // capture-promotion
+
+        // Single positions for the cases awkward to reach from the start.
+        AssertEditsMatchApplyMove(BoardState.FromFen("8/4P3/8/8/8/8/8/8 w - - 0 1"),
+                                  Move.FromUci("e7e8q"));                              // plain promotion
+        AssertEditsMatchApplyMove(BoardState.FromFen("4k3/8/8/8/8/8/8/R3K2R w KQ - 0 1"),
+                                  Move.FromUci("e1a1"));                               // queenside castle
+    }
+
+    private static void AssertEditsMatchApplyMove_Game(string moves)
+    {
+        var board = BoardState.FromMoves("");
+        foreach (string uci in moves.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries))
+        {
+            Move move = Move.FromUci(uci);
+            AssertEditsMatchApplyMove(board, move);  
+            board.ApplyMove(move);                    
+        }
+    }
+
+    private static void AssertEditsMatchApplyMove(BoardState pre, Move move)
+    {
+        // Apply the edits to a scratch placement exactly as the view's consume loop will
+        Piece[,] scratch = new Piece[8, 8];
+        for (int f = 0; f < 8; f++)
+            for (int r = 0; r < 8; r++)
+                scratch[f, r] = pre.At(f, r);
+
+        foreach (PieceEdit e in pre.DescribeMove(move))
+        {
+            switch (e.Kind)
+            {
+                case PieceEditKind.Remove:
+                    scratch[e.From.File, e.From.Rank] = default;
+                    break;
+                case PieceEditKind.Move:
+                    Piece p = scratch[e.From.File, e.From.Rank];
+                    scratch[e.From.File, e.From.Rank] = default;
+                    scratch[e.To.File, e.To.Rank] = p;
+                    break;
+                case PieceEditKind.Spawn:
+                    scratch[e.To.File, e.To.Rank] = e.Piece;
+                    break;
+            }
+        }
+
+        // ApplyMove on an independent clone
+        BoardState post = pre.Clone();
+        post.ApplyMove(move);
+
+        for (int f = 0; f < 8; f++)
+            for (int r = 0; r < 8; r++)
+                Assert.AreEqual(post.At(f, r), scratch[f, r],
+                    $"Mismatch at {new Square(f, r)} applying '{move.ToUci()}'");
+    }
 }

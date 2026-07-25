@@ -52,7 +52,9 @@ public class BoardView : MonoBehaviour
     public BoardState CurrentBoard => _currentBoard;
 
     private Coroutine _activeTween;         // in-flight slide, if any
-    private readonly List<GameObject> _spawned = new List<GameObject>();   // current on-board piece objects
+
+    // Square -> the live GameObject on it
+    private readonly Dictionary<Square, GameObject> _registry = new Dictionary<Square, GameObject>();
 
 
     // ----- History / navigation -----
@@ -64,6 +66,36 @@ public class BoardView : MonoBehaviour
 
     // Announces the move token that produced the displayed position (highlighter listens)
     public event System.Action<string> OnViewedMoveChanged;
+
+    // ----- Diff Diagnostics -----
+    [Header("Diff diagnostics")]
+    [SerializeField] private bool _verifyRegistryAfterDiff = true;   // drift detector; turn off once trusted
+
+    // The registry must match the board square-for-square after a diff: same occupied
+    // squares, and each object's PieceRef matching the piece there
+    private void VerifyRegistryMatches(BoardState board)
+    {
+        for (int file = 0; file < 8; file++)
+            for (int rank = 0; rank < 8; rank++)
+            {
+                var sq = new Square(file, rank);
+                Piece p = board.At(file, rank);
+                bool boardHas = !p.IsEmpty;
+                bool regHas = _registry.TryGetValue(sq, out GameObject go);
+
+                if (boardHas != regHas)
+                {
+                    Debug.LogError($"Drift at {sq}: board={(boardHas ? p.Color + " " + p.Type : "empty")}, registry={(regHas ? "object" : "empty")}", this);
+                    continue;
+                }
+                if (boardHas)
+                {
+                    PieceRef pr = go.GetComponent<PieceRef>();
+                    if (pr == null || pr.Type != p.Type || pr.Color != p.Color)
+                        Debug.LogError($"Mismatch at {sq}: board={p.Color} {p.Type}, object={(pr == null ? "no PieceRef" : pr.Color + " " + pr.Type)}", this);
+                }
+            }
+    }
 
     public int LiveMoveCount => Tokenize(_liveMoves).Length;
     public bool IsAtLive => _viewedMoveCount == LiveMoveCount;
@@ -105,41 +137,77 @@ public class BoardView : MonoBehaviour
         Render(BoardState.FromMoves(""));   // empty string -> starting position
     }
 
-    // Destroys last update's pieces, rebuilds from given state
     public void Render(BoardState board)
     {
         _currentBoard = board;
 
-        foreach (GameObject go in _spawned)
+        foreach (GameObject go in _registry.Values)
             Destroy(go);
-        _spawned.Clear();
+        _registry.Clear();
 
         for (int file = 0; file < 8; file++)
             for (int rank = 0; rank < 8; rank++)
             {
                 Piece piece = board.At(file, rank);
-                if (piece.IsEmpty)
-                    continue;
-
-                if (!_lookup.TryGetValue((piece.Type, piece.Color), out GameObject prefab) || prefab == null)
-                {
-                    Debug.LogError($"No prefab assigned for {piece.Color} {piece.Type}", this);
-                    continue;
-                }
-
-                GameObject go = Instantiate(prefab, transform);          // parent under the board root
-                go.transform.localPosition = SquareToLocal(file, rank);
-                go.transform.localScale *= ScaleFor(piece.Type);
-
-                // Logging this piece's attributes in PieceRef
-                PieceRef pieceRef = go.AddComponent<PieceRef>();
-                pieceRef.File = file;
-                pieceRef.Rank = rank;
-                pieceRef.Type = piece.Type;
-                pieceRef.Color = piece.Color;
-
-                _spawned.Add(go);
+                if (!piece.IsEmpty)
+                    SpawnPiece(new Square(file, rank), piece);
             }
+    }
+
+    // Edit existing pieces toward a new position
+    private void ApplyEdits(IReadOnlyList<PieceEdit> edits)
+    {
+        foreach (PieceEdit e in edits)
+        {
+            switch (e.Kind)
+            {
+                case PieceEditKind.Remove: RemovePiece(e.From); break;
+                case PieceEditKind.Move: MovePiece(e.From, e.To); break;
+                case PieceEditKind.Spawn: SpawnPiece(e.To, e.Piece); break;
+            }
+        }
+    }
+
+    private void RemovePiece(Square sq)
+    {
+        if (!_registry.TryGetValue(sq, out GameObject go))
+            throw new System.InvalidOperationException($"Remove: nothing on {sq} (registry drift)");
+        _registry.Remove(sq);
+        Destroy(go);
+    }
+
+    private void MovePiece(Square from, Square to)
+    {
+        if (!_registry.TryGetValue(from, out GameObject go))
+            throw new System.InvalidOperationException($"Move: nothing on {from} (registry drift)");
+        if (_registry.ContainsKey(to))
+            throw new System.InvalidOperationException($"Move: {to} already occupied (edit ordering / drift)");
+
+        _registry.Remove(from);
+        _registry[to] = go;
+
+        go.transform.localPosition = SquareToLocal(to.File, to.Rank);
+
+        PieceRef pr = go.GetComponent<PieceRef>();
+        if (pr != null) { pr.File = to.File; pr.Rank = to.Rank; }
+    }
+
+    private void SpawnPiece(Square at, Piece piece)
+    {
+        if (!_lookup.TryGetValue((piece.Type, piece.Color), out GameObject prefab) || prefab == null)
+        {
+            Debug.LogError($"No prefab assigned for {piece.Color} {piece.Type}", this);
+            return;
+        }
+
+        GameObject go = Instantiate(prefab, transform);
+        go.transform.localPosition = SquareToLocal(at.File, at.Rank);
+        go.transform.localScale *= ScaleFor(piece.Type);
+
+        PieceRef pr = go.AddComponent<PieceRef>();
+        pr.File = at.File; pr.Rank = at.Rank; pr.Type = piece.Type; pr.Color = piece.Color;
+
+        _registry[at] = go;
     }
 
     // Per-type value with global fallback
@@ -168,7 +236,7 @@ public class BoardView : MonoBehaviour
     // TEMP board square rendering
     private void OnDrawGizmos()
     {
-        Gizmos.color = Color.yellow;
+        Gizmos.color = Color.white;
         for (int file = 0; file < 8; file++)
             for (int rank = 0; rank < 8; rank++)
             {
@@ -192,19 +260,18 @@ public class BoardView : MonoBehaviour
     private void HandleMovesReceived(string moves)
     {
         string previousLive = _liveMoves;
-        bool wasAtLive = IsAtLive;   // showing the present before this update?
+        bool wasAtLive = IsAtLive;
 
         _liveMoves = moves;
-        StopActiveTween();           // settle any in-flight slide before deciding
+        StopActiveTween();
 
         if (wasAtLive)
         {
-            // Go forward with the game; animate a clean single move.
             _viewedMoveCount = LiveMoveCount;
             BoardState newBoard = BoardState.FromMoves(moves);
 
-            if (IsSingleNewMove(previousLive, moves, out int ff, out int fr, out int tf, out int tr))
-                AnimateThenRender(ff, fr, tf, tr, newBoard);
+            if (IsSingleNewMove(previousLive, moves, out string moveToken))
+                ApplyPlyToView(BoardState.FromMoves(previousLive), moveToken, newBoard, animate: true);
             else
                 Render(newBoard);
 
@@ -212,47 +279,72 @@ public class BoardView : MonoBehaviour
         }
         else if (_snapToLiveOnNewMove || !IsForwardExtension(previousLive, moves))
         {
-            // Viewing old move, but the toggle says snap, or timeline diverged -> snap to present
             _viewedMoveCount = LiveMoveCount;
             RefreshViewedPosition();
         }
-        // else: reviewing an extension with snap off -> stay put; live advances underneath
     }
 
-    // "e2e4" / "e7e8q" -> squares. False if malformed or off-board
-    private static bool TryParseMove(string move, out int fromFile, out int fromRank,
-                                                  out int toFile, out int toRank)
+    // Single forward ply: edit existing pieces toward newBoard via model's edit set
+    private void ApplyMoveToView(string previousMoves, string moveToken, BoardState newBoard)
     {
-        fromFile = fromRank = toFile = toRank = -1;
-        if (move == null || move.Length < 4) return false;
+        try
+        {
+            BoardState previousBoard = BoardState.FromMoves(previousMoves);
+            Move move = Move.FromUci(moveToken);
+            IReadOnlyList<PieceEdit> edits = previousBoard.DescribeMove(move);
 
-        fromFile = move[0] - 'a'; fromRank = move[1] - '1';
-        toFile = move[2] - 'a'; toRank = move[3] - '1';
-        return fromFile >= 0 && fromFile < 8 && fromRank >= 0 && fromRank < 8
-            && toFile >= 0 && toFile < 8 && toRank >= 0 && toRank < 8;
+            _currentBoard = newBoard;   // commit logical truth; edits bring registry/PieceRef/transforms in line
+            ApplyEdits(edits);
+
+            if (_verifyRegistryAfterDiff)
+                VerifyRegistryMatches(newBoard);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"Diff failed for '{moveToken}' ({ex.Message}); rebuilding from scratch.", this);
+            Render(newBoard);
+        }
     }
 
-    // True if 'moves' is 'prev' plus exactly one more token
-    // Outputs the from/to squares of that one new move
-    private static bool IsSingleNewMove(string prev, string moves,
-        out int fromFile, out int fromRank, out int toFile, out int toRank)
+    // One forward ply - commit the identity-preserving diff, then optionally
+    // slide the moved pieces into place. Failure rebuilds from scratch
+    private void ApplyPlyToView(BoardState before, string moveToken, BoardState target, bool animate)
     {
-        fromFile = fromRank = toFile = toRank = -1;
+        try
+        {
+            Move move = Move.FromUci(moveToken);
+            IReadOnlyList<PieceEdit> edits = before.DescribeMove(move);
 
-        if (prev == null)   // first state of a game, no animation
-            return false;
+            _currentBoard = target;      // commit logical truth
+            ApplyEdits(edits);           // registry, PieceRef, transforms -> committed
+
+            if (_verifyRegistryAfterDiff)
+                VerifyRegistryMatches(target);
+
+            if (animate)
+                AnimateMoveEdits(edits);   // rewind + slide as a visual overlay
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"Diff failed for '{moveToken}' ({ex.Message}); rebuilding.", this);
+            Render(target);
+        }
+    }
+
+    // True if 'moves' is 'prev' plus exactly one more token; outputs that token 
+    private static bool IsSingleNewMove(string prev, string moves, out string moveToken)
+    {
+        moveToken = null;
+        if (prev == null) return false;
 
         string[] prevTokens = Tokenize(prev);
         string[] newTokens = Tokenize(moves);
-        if (newTokens.Length != prevTokens.Length + 1)
-            return false;
+        if (newTokens.Length != prevTokens.Length + 1) return false;
         for (int i = 0; i < prevTokens.Length; i++)
-            if (prevTokens[i] != newTokens[i])
-                return false;   // histories diverged -> snap
+            if (prevTokens[i] != newTokens[i]) return false;
 
-        string move = newTokens[newTokens.Length - 1]; 
-
-        return TryParseMove(move, out fromFile, out fromRank, out toFile, out toRank);
+        moveToken = newTokens[newTokens.Length - 1];
+        return true;
     }
 
     private static string[] Tokenize(string moves) =>
@@ -261,64 +353,60 @@ public class BoardView : MonoBehaviour
             : moves.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
 
     // ---------- Animation ----------
-    private void AnimateThenRender(int fromFile, int fromRank, int toFile, int toRank, BoardState finalBoard)
+    private struct MoverAnim { public GameObject go; public Vector3 from; public Vector3 to; public float hop; }
+
+    // Rewind each Move-edit piece to its visual origin and slide it to the square it
+    // already occupies. Forward: piece sits on To, slides From->To. Reversed (history
+    // step-back): piece sits on From, slides To->From. Remove/Spawn edits don't slide;
+    // Captured pieces vanish and promoted pieces appear on commit
+    private void AnimateMoveEdits(IReadOnlyList<PieceEdit> edits, bool reversed = false)
     {
-        GameObject mover = FindPieceObject(fromFile, fromRank);
-        if (mover == null)   // nothing to animate -> just snap pieces
+        var movers = new List<MoverAnim>();
+        foreach (PieceEdit e in edits)
         {
-            Render(finalBoard);
-            return;
+            if (e.Kind != PieceEditKind.Move) continue;
+
+            Square landing = reversed ? e.From : e.To;    // where the piece is committed now
+            Square origin = reversed ? e.To : e.From;   // where its slide should start
+            if (!_registry.TryGetValue(landing, out GameObject go)) continue;
+
+            Vector3 originLocal = SquareToLocal(origin.File, origin.Rank);
+            Vector3 landingLocal = SquareToLocal(landing.File, landing.Rank);
+            PieceRef pr = go.GetComponent<PieceRef>();
+            float hop = HopHeightFor(pr != null ? pr.Type : PieceType.None);
+
+            go.transform.localPosition = originLocal;   // rewind the visual; state stays committed
+            movers.Add(new MoverAnim { go = go, from = originLocal, to = landingLocal, hop = hop });
         }
 
-        _currentBoard = finalBoard;   // logical truth updates now; visual catches up over the slide
-
-        // Clear a piece captured on the destination so the mover doesn't glide over it
-        GameObject captured = FindPieceObject(toFile, toRank);
-        if (captured != null)
-        {
-            _spawned.Remove(captured);
-            Destroy(captured);
-        }
-
-        PieceRef moverRef = mover.GetComponent<PieceRef>();
-        float hop = HopHeightFor(moverRef != null ? moverRef.Type : PieceType.None);
-
-        _activeTween = StartCoroutine(SlidePiece(
-            mover, SquareToLocal(fromFile, fromRank), SquareToLocal(toFile, toRank), finalBoard, hop));
+        if (movers.Count > 0)
+            _activeTween = StartCoroutine(SlideMovers(movers));
     }
 
-    private IEnumerator SlidePiece(GameObject mover, Vector3 fromLocal, Vector3 toLocal, BoardState finalBoard, float hopHeight)
+    private IEnumerator SlideMovers(List<MoverAnim> movers)
     {
         float t = 0f;
         while (t < 1f)
         {
             t += Time.deltaTime / Mathf.Max(_moveDuration, 0.0001f);
-            float clamped = Mathf.Clamp01(t);
+            float c = Mathf.Clamp01(t);
+            float eased = Mathf.SmoothStep(0f, 1f, c);
 
-            Vector3 pos = Vector3.Lerp(fromLocal, toLocal, Mathf.SmoothStep(0f, 1f, clamped));
-            pos.y += hopHeight * Mathf.Sin(clamped * Mathf.PI);   // arc; 0 hop = flat slide
-
-            if (mover != null)
-                mover.transform.localPosition = pos;
+            foreach (MoverAnim m in movers)
+            {
+                if (m.go == null) continue;
+                Vector3 pos = Vector3.Lerp(m.from, m.to, eased);
+                pos.y += m.hop * Mathf.Sin(c * Mathf.PI);   // arc; 0 hop = flat slide
+                m.go.transform.localPosition = pos;
+            }
             yield return null;
         }
 
+        foreach (MoverAnim m in movers)          // settle exactly on the committed square
+            if (m.go != null) m.go.transform.localPosition = m.to;
+
         _activeTween = null;
-        Render(finalBoard);   // rebuild to truth; the slider ended exactly on its square
     }
-
-    private GameObject FindPieceObject(int file, int rank)
-    {
-        foreach (GameObject go in _spawned)
-        {
-            if (go == null) continue;
-            PieceRef pr = go.GetComponent<PieceRef>();
-            if (pr != null && pr.File == file && pr.Rank == rank)
-                return go;
-        }
-        return null;
-    }
-
 
     // ----- History/Navigation -----
     public void StepBack(bool animate = true)
@@ -326,17 +414,24 @@ public class BoardView : MonoBehaviour
         if (_viewedMoveCount <= 0) return;
         StopActiveTween();
 
-        string undone = ViewedLastMove();   // the move that produced the current position
+        string undone = ViewedLastMove();          // the move being taken back
         _viewedMoveCount--;
-        BoardState target = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));
+        BoardState target = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));   // pre-move position
 
-        // Reversed: move the piece from its destination back to its origin.
-        if (animate && TryParseMove(undone, out int ff, out int fr, out int tf, out int tr))
-            AnimateThenRender(tf, tr, ff, fr, target);
-        else
-            Render(target);
+        Render(target);   // rebuild truth; captured/un-promoted pieces reappear here
+
+        // Reverse-animate the forward edits: DescribeMove(undone) on the pre-move board
+        // gives the same Move edits, run To->From. Castle now retreats king AND rook.
+        if (animate && TryGetMove(undone, out Move move))
+            AnimateMoveEdits(target.DescribeMove(move), reversed: true);
 
         RaiseViewedMoveChanged();
+    }
+
+    private static bool TryGetMove(string uci, out Move move)
+    {
+        try { move = Move.FromUci(uci); return true; }
+        catch { move = default; return false; }
     }
 
     public void StepForward(bool animate = true)
@@ -344,15 +439,12 @@ public class BoardView : MonoBehaviour
         if (_viewedMoveCount >= LiveMoveCount) return;
         StopActiveTween();
 
+        BoardState before = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));
         _viewedMoveCount++;
-        string move = ViewedLastMove();     // the move we just stepped onto
+        string move = ViewedLastMove();
         BoardState target = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));
 
-        if (animate && TryParseMove(move, out int ff, out int fr, out int tf, out int tr))
-            AnimateThenRender(ff, fr, tf, tr, target);
-        else
-            Render(target);
-
+        ApplyPlyToView(before, move, target, animate);
         RaiseViewedMoveChanged();
     }
 
@@ -364,7 +456,15 @@ public class BoardView : MonoBehaviour
         if (_activeTween == null) return;
         StopCoroutine(_activeTween);
         _activeTween = null;
-        Render(_currentBoard);   // snap the interrupted slide to its committed destination
+        SnapAllToRegistry();   // reconcile any mid-slide transforms to committed truth
+    }
+
+    // Fixes visuals after interrupted slide - every piece sits exactly on its registry square
+    private void SnapAllToRegistry()
+    {
+        foreach (KeyValuePair<Square, GameObject> kv in _registry)
+            if (kv.Value != null)
+                kv.Value.transform.localPosition = SquareToLocal(kv.Key.File, kv.Key.Rank);
     }
 
     // Snap-render whatever the cursor points at (manual nav is instant, not tweened)

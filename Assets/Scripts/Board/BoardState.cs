@@ -1,5 +1,5 @@
 using System;
-
+using System.Collections.Generic;
 public partial class BoardState
 {
     // Squares indexed [file, rank] 0–7.
@@ -50,6 +50,50 @@ public partial class BoardState
 
     public void ApplyMove(Move move)
     {
+        // Placement edits, computed against the PRE-move board
+        IReadOnlyList<PieceEdit> edits = DescribeMove(move);
+
+        Piece moving = _squares[move.From.File, move.From.Rank];   // non-empty: DescribeMove checked
+
+        // Position metadata depends only on the mover + from/to
+        UpdateCastlingRights(moving, move.From, move.To);
+
+        bool isDoublePush = moving.Type == PieceType.Pawn
+                            && Math.Abs(move.To.Rank - move.From.Rank) == 2;
+        EnPassantTarget = isDoublePush
+            ? new Square(move.From.File, (move.From.Rank + move.To.Rank) / 2)  // the square skipped over
+            : (Square?)null;                                                   // any other move clears it
+
+        ActiveColor = Opposite(ActiveColor);
+
+        // Placement: the same edits the view will consume
+        foreach (PieceEdit e in edits)
+            ApplyEdit(e);
+    }
+
+    // Applies one placement primitive to _squares 
+    private void ApplyEdit(PieceEdit edit)
+    {
+        switch (edit.Kind)
+        {
+            case PieceEditKind.Remove:
+                _squares[edit.From.File, edit.From.Rank] = default;
+                break;
+            case PieceEditKind.Move:
+                Piece p = _squares[edit.From.File, edit.From.Rank];
+                _squares[edit.From.File, edit.From.Rank] = default;
+                _squares[edit.To.File, edit.To.Rank] = p;
+                break;
+            case PieceEditKind.Spawn:
+                _squares[edit.To.File, edit.To.Rank] = edit.Piece;
+                break;
+        }
+    }
+
+    // Classifies 'move' against current (pre-move) placement and returns the
+    // GameObject-level edits that transform the piece set into the post-move one
+    public IReadOnlyList<PieceEdit> DescribeMove(Move move)
+    {
         int fromFile = move.From.File;
         int fromRank = move.From.Rank;
         int toFile = move.To.File;
@@ -59,51 +103,46 @@ public partial class BoardState
         if (moving.IsEmpty)
             throw new ArgumentException($"No piece on origin of '{move.ToUci()}' (desync?)");
 
+        var edits = new List<PieceEdit>(3);   // capture-promotion is the 3-edit maximum
+
+        // Castle: two pieces move - Detected by the king crossing >= 2 files
         bool isCastle = moving.Type == PieceType.King && Math.Abs(toFile - fromFile) >= 2;
+        if (isCastle)
+        {
+            bool kingside = toFile > fromFile;
+            int rank = fromRank;
+            int kingDestFile = kingside ? 6 : 2;   // g / c
+            int rookFromFile = kingside ? 7 : 0;   // h / a 
+            int rookDestFile = kingside ? 5 : 3;   // f / d
+
+            edits.Add(PieceEdit.Move(move.From, new Square(kingDestFile, rank)));            // king first
+            edits.Add(PieceEdit.Move(new Square(rookFromFile, rank), new Square(rookDestFile, rank)));
+            return edits;
+        }
 
         bool isEnPassant = moving.Type == PieceType.Pawn
                            && fromFile != toFile
                            && _squares[toFile, toRank].IsEmpty;
-
         bool isPromotion = move.Promotion != PieceType.None;
 
-        // position bookkeeping: depends only on the move, not on placement
-        UpdateCastlingRights(moving, move.From, move.To);
+        // A normal capture is an occupied destination; En passant's capture is NOT
+        bool capturesOnTo = !isEnPassant && !_squares[toFile, toRank].IsEmpty;
 
-        bool isDoublePush = moving.Type == PieceType.Pawn && Math.Abs(toRank - fromRank) == 2;
-        EnPassantTarget = isDoublePush
-            ? new Square(fromFile, (fromRank + toRank) / 2)   // the square skipped over
-            : (Square?)null;                                  // any other move clears it
-
-        ActiveColor = Opposite(ActiveColor);
-
-        if (isCastle)
-        {
-            int rank = fromRank;                  // back rank: 0 White, 7 Black
-            bool kingside = toFile > fromFile;
-
-            int kingDestFile = kingside ? 6 : 2;  // g-file or c-file
-            int rookFromFile = kingside ? 7 : 0;  // corner rook: h-file or a-file
-            int rookDestFile = kingside ? 5 : 3;  // f-file or d-file
-
-            _squares[fromFile, rank] = default;  // clear king origin (e-file)
-            _squares[rookFromFile, rank] = default;  // clear rook origin (corner)
-            _squares[kingDestFile, rank] = new Piece(PieceType.King, moving.Color);
-            _squares[rookDestFile, rank] = new Piece(PieceType.Rook, moving.Color);
-            return;
-        }
-
-        // Making non-castle move
-        _squares[fromFile, fromRank] = default;   // lift the piece off its origin
-
+        // Removes first, so nothing a later Move/Spawn writes gets clobbered
+        if (capturesOnTo)
+            edits.Add(PieceEdit.Remove(move.To));                        // captured piece
         if (isEnPassant)
-            // Captured pawn is on the moving pawn's rank, in the destination's file
-            _squares[toFile, fromRank] = default;
+            edits.Add(PieceEdit.Remove(new Square(toFile, fromRank)));   // the bypassed pawn (e.g. d5)
+        if (isPromotion)
+            edits.Add(PieceEdit.Remove(move.From));                      // pawn promotion
 
-        // Swap pawn in case of promotion, otherwise place moving piece on target
-        _squares[toFile, toRank] = isPromotion
-            ? new Piece(move.Promotion, moving.Color)
-            : moving;
+        // Then fill 'to': Spawn for a promotion (new mesh), Move otherwise
+        if (isPromotion)
+            edits.Add(PieceEdit.Spawn(move.To, new Piece(move.Promotion, moving.Color)));
+        else
+            edits.Add(PieceEdit.Move(move.From, move.To));
+
+        return edits;
     }
 
     public static BoardState FromMoves(string moves)
