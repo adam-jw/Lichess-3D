@@ -200,6 +200,8 @@ MonoBehaviour:
     color: 1
     prefab: {fileID: 5245576311935972996, guid: 57cde1b76f89d92489a9f025c967433c, type: 3}
   _snapToLiveOnNewMove: 1
+  _verifyRegistryAfterDiff: 0
+  _outlineMaterial: {fileID: 2100000, guid: 6baced1f41008994ea8c7b57019e20df, type: 2}
 --- !u!4 &168287087
 Transform:
   m_ObjectHideFlags: 0

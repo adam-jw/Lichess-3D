@@ -71,6 +71,11 @@ public class BoardView : MonoBehaviour
     [Header("Diff diagnostics")]
     [SerializeField] private bool _verifyRegistryAfterDiff = true;   // drift detector; turn off once trusted
 
+    // ----- Piece Outline -----
+    [Header("Outline")]
+    [SerializeField] private Material _outlineMaterialWhite;   // null = outlines off
+    [SerializeField] private Material _outlineMaterialBlack;
+
     // The registry must match the board square-for-square after a diff: same occupied
     // squares, and each object's PieceRef matching the piece there
     private void VerifyRegistryMatches(BoardState board)
@@ -207,7 +212,30 @@ public class BoardView : MonoBehaviour
         PieceRef pr = go.AddComponent<PieceRef>();
         pr.File = at.File; pr.Rank = at.Rank; pr.Type = piece.Type; pr.Color = piece.Color;
 
+        AttachOutline(go, piece.Color);
         _registry[at] = go;
+    }
+
+    // Builds mesh-only inverted-hull shell as a child of each of the piece's mesh parts
+    private void AttachOutline(GameObject piece, PieceColor color)
+    {
+        Material mat = color == PieceColor.White ? _outlineMaterialWhite : _outlineMaterialBlack;
+        if (mat == null) return;
+
+        foreach (MeshFilter mf in piece.GetComponentsInChildren<MeshFilter>())
+        {
+            if (mf.sharedMesh == null) continue;
+
+            var shell = new GameObject("Outline");
+            shell.transform.SetParent(mf.transform, worldPositionStays: false);
+
+            shell.AddComponent<MeshFilter>().sharedMesh = OutlineMeshBaker.GetSmoothed(mf.sharedMesh);
+
+            var sr = shell.AddComponent<MeshRenderer>();
+            sr.sharedMaterial = mat;
+            sr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            sr.receiveShadows = false;
+        }
     }
 
     // Per-type value with global fallback
