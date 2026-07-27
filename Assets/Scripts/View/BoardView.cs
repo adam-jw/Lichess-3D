@@ -56,6 +56,10 @@ public class BoardView : MonoBehaviour
     // Square -> the live GameObject on it
     private readonly Dictionary<Square, GameObject> _registry = new Dictionary<Square, GameObject>();
 
+    public GameObject PieceAt(Square sq) => _registry.TryGetValue(sq, out GameObject go) ? go : null;
+
+    public event System.Action<GameObject> OnPieceSpawned;
+
 
     // ----- History / navigation -----
     [Header("History")]
@@ -73,8 +77,7 @@ public class BoardView : MonoBehaviour
 
     // ----- Piece Outline -----
     [Header("Outline")]
-    [SerializeField] private Material _outlineMaterialWhite;   // null = outlines off
-    [SerializeField] private Material _outlineMaterialBlack;
+    [SerializeField] private Material _outlineMaterial;   // Custom/PieceOutline; null = outlines off
 
     // The registry must match the board square-for-square after a diff: same occupied
     // squares, and each object's PieceRef matching the piece there
@@ -214,28 +217,32 @@ public class BoardView : MonoBehaviour
 
         AttachOutline(go, piece.Color);
         _registry[at] = go;
+        OnPieceSpawned?.Invoke(go);
     }
 
     // Builds mesh-only inverted-hull shell as a child of each of the piece's mesh parts
     private void AttachOutline(GameObject piece, PieceColor color)
     {
-        Material mat = color == PieceColor.White ? _outlineMaterialWhite : _outlineMaterialBlack;
-        if (mat == null) return;
+        if (_outlineMaterial == null) return;
 
+        var shells = new List<MeshRenderer>();
         foreach (MeshFilter mf in piece.GetComponentsInChildren<MeshFilter>())
         {
             if (mf.sharedMesh == null) continue;
 
             var shell = new GameObject("Outline");
             shell.transform.SetParent(mf.transform, worldPositionStays: false);
-
             shell.AddComponent<MeshFilter>().sharedMesh = OutlineMeshBaker.GetSmoothed(mf.sharedMesh);
 
             var sr = shell.AddComponent<MeshRenderer>();
-            sr.sharedMaterial = mat;
+            sr.sharedMaterial = _outlineMaterial;   // one material; color/width via MPB
             sr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             sr.receiveShadows = false;
+            shells.Add(sr);
         }
+        if (shells.Count == 0) return;
+
+        piece.AddComponent<PieceOutline>().Initialize(color, shells.ToArray());
     }
 
     // Per-type value with global fallback

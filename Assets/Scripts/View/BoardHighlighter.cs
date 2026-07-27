@@ -32,6 +32,23 @@ public class BoardHighlighter : MonoBehaviour
     [SerializeField] private Color _lastMoveColor = new Color(0.95f, 0.85f, 0.25f, 0.35f); 
     [SerializeField] private Color _premoveColor = new Color(0.65f, 0.4f, 0.95f, 0.45f);
 
+    [System.Serializable]
+    public struct OutlineTier
+    {
+        public Color whiteColor;                 // outline color on white pieces
+        public Color blackColor;                 // outline color on black pieces
+        [Range(0f, 0.1f)] public float width;    // world-space thickness, shared across colors
+        public Color ColorFor(PieceColor c) => c == PieceColor.White ? whiteColor : blackColor;
+    }
+
+    [Header("Piece outlines")]
+    [SerializeField] private OutlineTier _outlineBase;
+    [SerializeField] private OutlineTier _outlineHover;
+    [SerializeField] private OutlineTier _outlineSelected;
+
+    private PieceOutline _hoverOutline;      // currently Hovered, or null
+    private PieceOutline _selectionOutline;  // currently Selected, or null
+
     [Header("Check")]
     [SerializeField] private HighlightStyle _checkStyle;
 
@@ -47,14 +64,18 @@ public class BoardHighlighter : MonoBehaviour
 
     private void OnEnable()
     {
-        if (_boardView != null)
+        if (_boardView != null) {
             _boardView.OnViewedMoveChanged += HandleViewedMove;
+            _boardView.OnPieceSpawned += HandlePieceSpawned;
+        }
     }
 
     private void OnDisable()
     {
-        if (_boardView != null)
+        if (_boardView != null){
             _boardView.OnViewedMoveChanged -= HandleViewedMove;
+            _boardView.OnPieceSpawned -= HandlePieceSpawned;
+        }
     }
 
     // Follows the *displayed* position, so the highlight tracks wherever you've scrolled
@@ -85,15 +106,42 @@ public class BoardHighlighter : MonoBehaviour
 
     // ---------- Intent API (called by BoardInput) ----------
 
-    public void SetHover(int file, int rank, bool selectable) =>
+    public void SetHover(int file, int rank, bool selectable)
+    {
         SetLayer(HighlightLayer.Hover, selectable ? _selectableColor : _hoverColor, (file, rank));
 
-    public void ClearHover() => ClearLayer(HighlightLayer.Hover);
+        PieceOutline next = selectable ? OutlineAt(file, rank) : null;   // only selectable pieces pop
+        if (next == _hoverOutline) return;
+        PieceOutline prev = _hoverOutline;
+        _hoverOutline = next;
+        RefreshTier(prev);   // old hover drops to Selected (if it's the selected piece) or Base
+        RefreshTier(next);
+    }
 
-    public void SetSelection(int file, int rank) =>
+    public void ClearHover()
+    {
+        ClearLayer(HighlightLayer.Hover);
+        PieceOutline prev = _hoverOutline;
+        _hoverOutline = null;
+        RefreshTier(prev);
+    }
+
+    public void SetSelection(int file, int rank)
+    {
         SetLayer(HighlightLayer.Selection, _selectionColor, (file, rank));
+        PieceOutline prev = _selectionOutline;
+        _selectionOutline = OutlineAt(file, rank);
+        RefreshTier(prev);
+        RefreshTier(_selectionOutline);
+    }
 
-    public void ClearSelection() => ClearLayer(HighlightLayer.Selection);
+    public void ClearSelection()
+    {
+        ClearLayer(HighlightLayer.Selection);
+        PieceOutline prev = _selectionOutline;
+        _selectionOutline = null;
+        RefreshTier(prev);   // drops to Hover if still hovered, else Base
+    }
 
     public void SetPremove(int fromFile, int fromRank, int toFile, int toRank) =>
         SetLayer(HighlightLayer.Premove, _premoveColor, (fromFile, fromRank), (toFile, toRank));
@@ -218,5 +266,35 @@ public class BoardHighlighter : MonoBehaviour
         file = uci[offset] - 'a';
         rank = uci[offset + 1] - '1';
         return file >= 0 && file < 8 && rank >= 0 && rank < 8;
+    }
+
+    // ----- Outline Tiers -----
+
+    private void HandlePieceSpawned(GameObject piece)
+    {
+        PieceOutline o = piece.GetComponent<PieceOutline>();
+        if (o != null) ApplyTier(o, _outlineBase);   // new pieces start at Base
+    }
+
+    private OutlineTier TierFor(PieceOutline o)
+    {
+        if (o == _selectionOutline) return _outlineSelected;   // selected outranks hover
+        if (o == _hoverOutline) return _outlineHover;
+        return _outlineBase;
+    }
+
+    private void RefreshTier(PieceOutline o)
+    {
+        if (o == null) return;   // also true for a destroyed (captured) piece's component
+        ApplyTier(o, TierFor(o));
+    }
+
+    private void ApplyTier(PieceOutline o, OutlineTier tier) =>
+        o.Apply(tier.ColorFor(o.PieceColor), tier.width);
+
+    private PieceOutline OutlineAt(int file, int rank)
+    {
+        GameObject go = _boardView != null ? _boardView.PieceAt(new Square(file, rank)) : null;
+        return go != null ? go.GetComponent<PieceOutline>() : null;
     }
 }

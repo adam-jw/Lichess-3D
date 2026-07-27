@@ -269,6 +269,18 @@ MonoBehaviour:
   _selectionColor: {r: 0.08951937, g: 0.4792453, b: 0.13823509, a: 0.5411765}
   _lastMoveColor: {r: 0.95, g: 0.85, b: 0.25, a: 0.35}
   _premoveColor: {r: 0.6778052, g: 0.45917407, b: 0.93962264, a: 0.45}
+  _outlineBase:
+    whiteColor: {r: 0.60784316, g: 0.60784316, b: 0.60784316, a: 1}
+    blackColor: {r: 0, g: 0, b: 0, a: 1}
+    width: 0.01
+  _outlineHover:
+    whiteColor: {r: 0.509434, g: 0.509434, b: 0.509434, a: 1}
+    blackColor: {r: 0.3056603, g: 0.3056603, b: 0.3056603, a: 1}
+    width: 0.01
+  _outlineSelected:
+    whiteColor: {r: 0.4339623, g: 0.4339623, b: 0.4339623, a: 1}
+    blackColor: {r: 0.35686275, g: 0.35686275, b: 0.35686275, a: 1}
+    width: 0.01
   _checkStyle:
     color: {r: 1, g: 0, b: 0, a: 1}
     shape: 3
