@@ -162,6 +162,9 @@ MonoBehaviour:
   pieceHopOverrides:
   - type: 2
     hopHeight: 0.6
+  _knightFacing: 1
+  _knightYaw: 90
+  _knightSnoutNudge: 0.1
   piecePrefabs:
   - type: 1
     color: 0
@@ -264,9 +267,9 @@ MonoBehaviour:
   _session: {fileID: 785838380}
   _highlightPrefab: {fileID: 1177520607818154693, guid: bc868894994c73b449cff7c315fc77ca, type: 3}
   _heightOffset: 0.02
-  _hoverColor: {r: 0.94117653, g: 0.94117653, b: 0.94117653, a: 0.19607843}
+  _hoverColor: {r: 0.94117653, g: 0.94117653, b: 0.94117653, a: 0.09803922}
   _selectableColor: {r: 0.5611036, g: 0.8604872, b: 0.90943396, a: 0.35}
-  _selectionColor: {r: 0.08951937, g: 0.4792453, b: 0.13823509, a: 0.5411765}
+  _selectionColor: {r: 0.08951937, g: 0.4792453, b: 0.13823509, a: 0.77254903}
   _lastMoveColor: {r: 0.95, g: 0.85, b: 0.25, a: 0.35}
   _premoveColor: {r: 0.6778052, g: 0.45917407, b: 0.93962264, a: 0.45}
   _outlineBase:
@@ -274,11 +277,11 @@ MonoBehaviour:
     blackColor: {r: 0, g: 0, b: 0, a: 1}
     width: 0.01
   _outlineHover:
-    whiteColor: {r: 0.509434, g: 0.509434, b: 0.509434, a: 1}
+    whiteColor: {r: 0.335849, g: 0.335849, b: 0.335849, a: 1}
     blackColor: {r: 0.3056603, g: 0.3056603, b: 0.3056603, a: 1}
     width: 0.01
   _outlineSelected:
-    whiteColor: {r: 0.4339623, g: 0.4339623, b: 0.4339623, a: 1}
+    whiteColor: {r: 0.21509439, g: 0.21509439, b: 0.21509439, a: 1}
     blackColor: {r: 0.35686275, g: 0.35686275, b: 0.35686275, a: 1}
     width: 0.01
   _checkStyle:

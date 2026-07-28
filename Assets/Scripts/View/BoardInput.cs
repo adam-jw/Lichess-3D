@@ -131,9 +131,16 @@ public class BoardInput : MonoBehaviour
             Piece selected = board.At(_selectedFile, _selectedRank);
             Piece clicked = board.At(file, rank);
 
-            // Click same-color piece = user changed their mind; Change selection
+            // Click same-color piece = user changed their mind; change selection
             if (!clicked.IsEmpty && clicked.Color == selected.Color)
             {
+                // unless it's the king onto its own corner rook: that's a castle (if legal)
+                if (TryCastleTarget(board, _selectedFile, _selectedRank, file, rank, out _))
+                {
+                    CompleteMove(file, rank);
+                    return;
+                }
+
                 _selectedFile = file;
                 _selectedRank = rank;
                 Debug.Log($"Re-selected {SquareName(file, rank)}");
@@ -182,9 +189,14 @@ public class BoardInput : MonoBehaviour
 
     private void CompleteMove(int destFile, int destRank)
     {
+        BoardState board = _boardView.CurrentBoard;
+
+        // Hanbdle castle; Rewrite rook square to king-move notation (e1h1 -> e1g1)
+        if (TryCastleTarget(board, _selectedFile, _selectedRank, destFile, destRank, out int kingDestFile))
+            destFile = kingDestFile;
+
         string uci = SquareName(_selectedFile, _selectedRank) + SquareName(destFile, destRank);
 
-        BoardState board = _boardView.CurrentBoard;
         Piece moving = board.At(_selectedFile, _selectedRank);
         if (moving.Type == PieceType.Pawn && (destRank == 0 || destRank == 7))
             uci += "q";
@@ -202,8 +214,10 @@ public class BoardInput : MonoBehaviour
         // Opponent's turn -> queue move
         _hasPremove = true;
         _premoveUci = uci;
-        _preFromFile = fromFile; _preFromRank = fromRank;
-        _preToFile = destFile; _preToRank = destRank;
+        _preFromFile = fromFile; 
+        _preFromRank = fromRank;
+        _preToFile = destFile; 
+        _preToRank = destRank;
         Debug.Log("Premove queued: " + uci);
     }
 
@@ -284,19 +298,26 @@ public class BoardInput : MonoBehaviour
         // Regenerate only when the selected square actually changed
         if (_selectedFile != _dotsForFile || _selectedRank != _dotsForRank)
         {
-            _dotsForFile = _selectedFile;
-            _dotsForRank = _selectedRank;
-
             _legalDots.Clear();
             _legalCaptures.Clear();
 
             BoardState board = _boardView.CurrentBoard;
+            bool selectedIsKing = board.At(_selectedFile, _selectedRank).Type == PieceType.King;
+
             foreach (Move m in board.LegalFrom(new Square(_selectedFile, _selectedRank)))
             {
                 // Occupied target -> capture (Corners); empty -> regular move (Dot)
                 List<Square> bucket = board.At(m.To).IsEmpty ? _legalDots : _legalCaptures;
                 if (!bucket.Contains(m.To))   // promotions share a destination
                     bucket.Add(m.To);
+
+                // Castling should show as two-square hop OR as a 'capture' indicator on the rook
+                if (selectedIsKing && Mathf.Abs(m.To.File - _selectedFile) == 2)
+                {
+                    var rookSquare = new Square(m.To.File > _selectedFile ? 7 : 0, _selectedRank);
+                    if (!_legalCaptures.Contains(rookSquare))
+                        _legalCaptures.Add(rookSquare);
+                }
             }
 
             _highlighter.SetLegalMoves(_legalDots);
@@ -323,6 +344,29 @@ public class BoardInput : MonoBehaviour
 
         Piece piece = board.At(file, rank);
         return !piece.IsEmpty && _session.IsMyPiece(piece.Color);
+    }
+
+    // Click king -> click own rook = castle intent, ONLY if that castle is currently legal
+    // Otherwise, simply reselect rook
+    private bool TryCastleTarget(BoardState board, int fromFile, int fromRank,
+                                 int toFile, int toRank, out int kingDestFile)
+    {
+        kingDestFile = -1;
+
+        Piece from = board.At(fromFile, fromRank);
+        Piece to = board.At(toFile, toRank);
+
+        if (from.Type != PieceType.King) return false;
+        if (to.IsEmpty || to.Color != from.Color || to.Type != PieceType.Rook) return false;
+        if (toRank != fromRank || (toFile != 0 && toFile != 7)) return false;
+
+        var kingSquare = new Square(fromFile, fromRank);
+        var target = new Square(toFile > fromFile ? 6 : 2, fromRank);
+
+        foreach (Move m in board.LegalFrom(kingSquare))
+            if (m.To == target) { kingDestFile = target.File; return true; }
+
+        return false;
     }
 
 }
