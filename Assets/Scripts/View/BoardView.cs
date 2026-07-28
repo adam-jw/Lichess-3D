@@ -29,6 +29,15 @@ public class BoardView : MonoBehaviour
     [SerializeField] private PieceScale[] pieceScaleOverrides;
     [SerializeField] private PieceHop[] pieceHopOverrides;
 
+    // ----- Facing -----
+    private enum KnightFacing { FaceOpponent, FaceEachOther }
+
+    [Header("Facing")]
+    [SerializeField] private KnightFacing _knightFacing = KnightFacing.FaceEachOther;
+    [SerializeField] private float _knightYaw = 90f;   // sideways facing, in degrees
+
+    [SerializeField] private float _knightSnoutNudge = 0.15f;   // shift along facing so the snout sits over the square
+
     // hydrated in Awake
     private Dictionary<PieceType, float> _scaleLookup;
     private Dictionary<PieceType, float> _hopLookup;     
@@ -194,7 +203,7 @@ public class BoardView : MonoBehaviour
         _registry.Remove(from);
         _registry[to] = go;
 
-        go.transform.localPosition = SquareToLocal(to.File, to.Rank);
+        go.transform.localPosition = RestLocalPosition(to, go);
 
         PieceRef pr = go.GetComponent<PieceRef>();
         if (pr != null) { pr.File = to.File; pr.Rank = to.Rank; }
@@ -209,15 +218,47 @@ public class BoardView : MonoBehaviour
         }
 
         GameObject go = Instantiate(prefab, transform);
-        go.transform.localPosition = SquareToLocal(at.File, at.Rank);
         go.transform.localScale *= ScaleFor(piece.Type);
 
         PieceRef pr = go.AddComponent<PieceRef>();
         pr.File = at.File; pr.Rank = at.Rank; pr.Type = piece.Type; pr.Color = piece.Color;
 
+        if (piece.Type == PieceType.Knight)
+            go.transform.localRotation = KnightRotationFor(piece.Color, at);
+
+        go.transform.localPosition = RestLocalPosition(at, go);
+
         AttachOutline(go, piece.Color);
         _registry[at] = go;
         OnPieceSpawned?.Invoke(go);
+    }
+
+    // ----- Knight rotation / piece offset -----
+    private Quaternion KnightRotationFor(PieceColor color, Square square)
+    {
+        float yaw = _knightYaw;
+        switch (_knightFacing)
+        {
+            case KnightFacing.FaceOpponent:
+                if (color == PieceColor.Black) yaw += 180f;   // far army turns to face down the board
+                break;
+            case KnightFacing.FaceEachOther:
+                if (square.File >= 4) yaw += 180f;            // kingside knight turns back toward the centre
+                break;
+        }
+        return Quaternion.Euler(0f, yaw, 0f);
+    }
+
+    // A piece's resting spot on a square: the square centre plus any per-piece visual offset.
+    private Vector3 RestLocalPosition(Square sq, GameObject go) =>
+        SquareToLocal(sq.File, sq.Rank) + RestOffset(go);
+
+    // Knights lean forward along their facing (snout overhangs the base circle); everything else is centred.
+    private Vector3 RestOffset(GameObject go)
+    {
+        PieceRef pr = go.GetComponent<PieceRef>();
+        if (pr == null || pr.Type != PieceType.Knight) return Vector3.zero;
+        return go.transform.localRotation * (Vector3.forward * _knightSnoutNudge);
     }
 
     // Builds mesh-only inverted-hull shell as a child of each of the piece's mesh parts
@@ -405,8 +446,8 @@ public class BoardView : MonoBehaviour
             Square origin = reversed ? e.To : e.From;   // where its slide should start
             if (!_registry.TryGetValue(landing, out GameObject go)) continue;
 
-            Vector3 originLocal = SquareToLocal(origin.File, origin.Rank);
-            Vector3 landingLocal = SquareToLocal(landing.File, landing.Rank);
+            Vector3 originLocal = RestLocalPosition(origin, go);
+            Vector3 landingLocal = RestLocalPosition(landing, go);
             PieceRef pr = go.GetComponent<PieceRef>();
             float hop = HopHeightFor(pr != null ? pr.Type : PieceType.None);
 
@@ -499,7 +540,7 @@ public class BoardView : MonoBehaviour
     {
         foreach (KeyValuePair<Square, GameObject> kv in _registry)
             if (kv.Value != null)
-                kv.Value.transform.localPosition = SquareToLocal(kv.Key.File, kv.Key.Rank);
+                kv.Value.transform.localPosition = RestLocalPosition(kv.Key, kv.Value);
     }
 
     // Snap-render whatever the cursor points at (manual nav is instant, not tweened)
