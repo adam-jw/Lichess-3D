@@ -11,6 +11,15 @@ public class LichessGameSession : MonoBehaviour
     [SerializeField] private float _finishGraceSeconds = 3f;   // wait this long for the board stream to close itself
     private Coroutine _finishGrace;
 
+
+    [Header("Reconnect")]
+    [SerializeField] private float _reconnectBaseDelay = 1f;
+    [SerializeField] private float _reconnectMaxDelay = 8f;
+    [SerializeField] private int _reconnectMaxAttempts = 10;   // give up after this many; 0 = never give up
+
+    private StreamReconnector _reconnector;
+
+
     // Created per game, destroyed at game end
     private LichessBoardStream _boardStream;
 
@@ -50,6 +59,14 @@ public class LichessGameSession : MonoBehaviour
 
     // ---------- Start ----------
 
+    private void Awake()
+    {
+        _reconnector = new StreamReconnector(
+            this, ReconnectBoardStream,
+            _reconnectBaseDelay, _reconnectMaxDelay,
+            _reconnectMaxAttempts, HandleReconnectExhausted);
+    }
+
     private void HandleGameStart(GameEventInfo game)
     {
         // One game at a time; will need to be replaced later if multiple boards are desired
@@ -75,6 +92,8 @@ public class LichessGameSession : MonoBehaviour
         _boardStream.Initialize(_authManager, _client, game.gameId);
         _boardStream.StartStream();
 
+        _reconnector.NotifyConnected();
+
         Debug.Log("Session: game " + CurrentGameId + " begun, playing " + MyColor);
         OnGameStarted?.Invoke(game);
     }
@@ -84,6 +103,12 @@ public class LichessGameSession : MonoBehaviour
 
     private void HandleGameState(GameStateEvent state)
     {
+        if (_reconnector.Attempt != 0)
+        {
+            Debug.Log("Board stream reconnected.");
+            _reconnector.NotifyConnected();
+        }
+
         bool wasMyTurn = IsMyTurn;          // sampled BEFORE we advance side-to-move
         SideToMove = BoardState.SideToMove(CountMoves(state.moves));
 
@@ -144,12 +169,49 @@ public class LichessGameSession : MonoBehaviour
         if (!IsGameActive)
             return;
 
-        GameEndReason gameEnd = _sawTerminalStatus
-            ? GameEndReason.Finished
-            : GameEndReason.ConnectionLost;
+        // Genuine game end (saw a terminal status): finish, don't reconnect
+        if (_sawTerminalStatus)
+        {
+            _reconnector.Cancel();
+            EndGame(GameEndReason.Finished);
+            return;
+        }
 
-        EndGame(gameEnd);
+        switch (streamEnd)
+        {
+            case StreamEndReason.StoppedByUs:
+                break;   
+
+            case StreamEndReason.AuthFailed:
+                _reconnector.Cancel();   // can't reconnect without re-auth
+                EndGame(GameEndReason.ConnectionLost);
+                break;
+
+            case StreamEndReason.ClosedByServer:
+            case StreamEndReason.Error:
+                // Transient mid-game drop: keep the stream object, retry with backoff
+                Debug.LogWarning("Board stream dropped mid-game; reconnecting (attempt " +
+                                 (_reconnector.Attempt + 1) + ")");
+                _reconnector.Schedule();
+                break;
+        }
     }
+
+    // Retry action: restart the SAME board stream
+    private void ReconnectBoardStream()
+    {
+        if (!IsGameActive || _boardStream == null) return;
+        _boardStream.StartStream();   // a fresh gameFull will re-sync the board on success
+    }
+
+    // Budget spent: drop is not recovering, so end the game
+    private void HandleReconnectExhausted()
+    {
+        if (!IsGameActive) return;
+        Debug.LogWarning("Board stream reconnect gave up; ending game.");
+        EndGame(_sawTerminalStatus ? GameEndReason.Finished : GameEndReason.ConnectionLost);
+    }
+
 
     // Lichess's out-of-band confirmation on the account event stream
     // ADVISORY ONLY: board stream still owes the FINAL gameState (mating
@@ -160,10 +222,20 @@ public class LichessGameSession : MonoBehaviour
         if (!IsGameActive || game.gameId != CurrentGameId)
             return;
 
-        _sawTerminalStatus = true;   // proof the game really ended, even if we never see the final state
+        _sawTerminalStatus = true;
 
-        if (_finishGrace == null)
-            _finishGrace = StartCoroutine(CloseBoardStreamAfterGrace());
+        // Stream healthy: let it deliver the final state, then close 
+        // Mid-reconnect: won't deliver anything, end now
+        if (_boardStream != null && _boardStream.IsStreaming)
+        {
+            if (_finishGrace == null)
+                _finishGrace = StartCoroutine(CloseBoardStreamAfterGrace());
+        }
+        else
+        {
+            _reconnector.Cancel();
+            EndGame(GameEndReason.Finished);
+        }
     }
 
     private System.Collections.IEnumerator CloseBoardStreamAfterGrace()
@@ -191,6 +263,7 @@ public class LichessGameSession : MonoBehaviour
             return;
 
         IsGameActive = false;
+        _reconnector.Cancel();
 
         if (_finishGrace != null)
         {

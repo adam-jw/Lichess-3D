@@ -11,19 +11,20 @@ public class LichessEventStream : LichessStreamBase
     [Tooltip("Backoff never waits longer than this between attempts.")]
     [SerializeField] private float _maxDelaySeconds = 8f;
 
+    private StreamReconnector _reconnector;
+
     public event System.Action<GameEventInfo> OnGameStart;
     public event System.Action<GameEventInfo> OnGameFinish;
 
     // Raised when the auth token is rejected 
     public event System.Action OnAuthenticationLost;
 
-    private Coroutine _reconnectRoutine;
-    private int _attempt;   // # consecutive failed reconnects
     private void Awake()
     {
         _authManager = GetComponent<LichessAuthManager>();
         _authManager.OnAuthenticated += HandleAuthenticated;
         OnStreamEnded += HandleStreamEnded;
+        _reconnector = new StreamReconnector(this, StartStream, _baseDelaySeconds, _maxDelaySeconds);
     }
 
     protected override void OnDestroy()
@@ -31,17 +32,13 @@ public class LichessEventStream : LichessStreamBase
         if (_authManager != null)
             _authManager.OnAuthenticated -= HandleAuthenticated;
         OnStreamEnded -= HandleStreamEnded;
-
-        if (_reconnectRoutine != null)
-            StopCoroutine(_reconnectRoutine);
-
-        base.OnDestroy();   // let base stop the thread
+        _reconnector?.Cancel();
+        base.OnDestroy();
     }
 
-    // First connect, on login
     private void HandleAuthenticated()
     {
-        _attempt = 0;
+        _reconnector.NotifyConnected();
         StartStream();
     }
 
@@ -58,67 +55,28 @@ public class LichessEventStream : LichessStreamBase
         switch (reason)
         {
             case StreamEndReason.StoppedByUs:
-                // Deliberate stop, stay down
-                CancelPendingReconnect();
+                _reconnector.Cancel();
                 break;
-
             case StreamEndReason.AuthFailed:
-                // Token is dead; ask for re-login to authenticate
-                CancelPendingReconnect();
+                _reconnector.Cancel();
                 Debug.LogError("Event stream: authentication lost, re-login required.");
                 OnAuthenticationLost?.Invoke();
                 break;
-
             case StreamEndReason.ClosedByServer:
             case StreamEndReason.Error:
-                ScheduleReconnect();
+                Debug.LogWarning("Event stream dropped; reconnecting (attempt " + (_reconnector.Attempt + 1) + ")");
+                _reconnector.Schedule();
                 break;
         }
-    }
-
-    private void ScheduleReconnect()
-    {
-        // Guard against double-scheduling; one pending retry at a time
-        if (_reconnectRoutine != null)
-            return;
-
-        float delay = ComputeBackoff(_attempt);
-        _attempt++;   // next failure waits longer; reset happens on a confirmed connect
-        Debug.LogWarning("Event stream dropped; reconnecting in " +
-                         delay.ToString("0.#") + "s (attempt " + _attempt + ")");
-        _reconnectRoutine = StartCoroutine(ReconnectAfter(delay));
-    }
-
-    private IEnumerator ReconnectAfter(float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        _reconnectRoutine = null;   // this retry is being spent; allow the NEXT drop to schedule again
-        StartStream();
-        // If this attempt fails, StreamLoop fires OnStreamEnded again and we come back through ScheduleReconnect
-    }
-
-    private void CancelPendingReconnect()
-    {
-        if (_reconnectRoutine != null)
-        {
-            StopCoroutine(_reconnectRoutine);
-            _reconnectRoutine = null;
-        }
-    }
-
-    private float ComputeBackoff(int attempt)
-    {
-        float delay = _baseDelaySeconds * Mathf.Pow(2f, attempt);
-        return Mathf.Min(delay, _maxDelaySeconds);
     }
 
     protected override void HandleLine(string line)
     {
         // A line arriving is proof the connection is up
-        if (_attempt != 0)
+        if (_reconnector.Attempt != 0)
         {
             Debug.Log("Event stream reconnected.");
-            _attempt = 0;
+            _reconnector.NotifyConnected();
         }
 
         var baseEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessEventBase>(line);
