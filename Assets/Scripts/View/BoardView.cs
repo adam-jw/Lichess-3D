@@ -91,6 +91,10 @@ public class BoardView : MonoBehaviour
     [Header("Outline")]
     [SerializeField] private Material _outlineMaterial;   // Custom/PieceOutline; null = outlines off
 
+    // ----- Promotion animation -----
+    private GameObject _promoStandIn; // throwaway pawn slides in while real promoted piece waits hidden
+    private GameObject _promoRevealed;
+
     // The registry must match the board square-for-square after a diff: same occupied
     // squares, and each object's PieceRef matching the piece there
     private void VerifyRegistryMatches(BoardState board)
@@ -410,7 +414,7 @@ public class BoardView : MonoBehaviour
                 VerifyRegistryMatches(target);
 
             if (animate)
-                AnimateMoveEdits(edits);   // rewind + slide as a visual overlay
+                AnimateMoveEdits(edits, move);   // rewind + slide as a visual overlay
         }
         catch (System.Exception ex)
         {
@@ -447,9 +451,32 @@ public class BoardView : MonoBehaviour
     // already occupies. Forward: piece sits on To, slides From->To. Reversed (history
     // step-back): piece sits on From, slides To->From. Remove/Spawn edits don't slide;
     // Captured pieces vanish and promoted pieces appear on commit
-    private void AnimateMoveEdits(IReadOnlyList<PieceEdit> edits, bool reversed = false)
+    private void AnimateMoveEdits(IReadOnlyList<PieceEdit> edits, Move move, bool reversed = false)
     {
         var movers = new List<MoverAnim>();
+
+        // Promotion: Slide a throwaway pawn From->To with real piece hidden, then swap on arrival
+        if (!reversed && move.Promotion != PieceType.None
+            && _registry.TryGetValue(move.To, out GameObject promotedGo))
+        {
+            FinalizePromotionIfPending();
+
+            PieceColor color = promotedGo.GetComponent<PieceRef>().Color;
+            GameObject standIn = MakePromotionStandIn(color);
+
+            if (standIn != null)
+            {
+                _promoRevealed = promotedGo;
+                _promoRevealed.SetActive(false);                      
+                _promoStandIn = standIn;
+
+                Vector3 from = RestLocalPosition(move.From, standIn);
+                Vector3 to = RestLocalPosition(move.To, promotedGo); 
+                standIn.transform.localPosition = from;
+                movers.Add(new MoverAnim { go = standIn, from = from, to = to, hop = HopHeightFor(PieceType.Pawn) });
+            }
+        }
+
         foreach (PieceEdit e in edits)
         {
             if (e.Kind != PieceEditKind.Move) continue;
@@ -493,8 +520,31 @@ public class BoardView : MonoBehaviour
         foreach (MoverAnim m in movers)          // settle exactly on the committed square
             if (m.go != null) m.go.transform.localPosition = m.to;
 
+        FinalizePromotionIfPending();
         _activeTween = null;
     }
+
+    // --- Piece promotion animation helpers --- 
+
+    // Make throwaway pawn used only for the promotion slide; never registered, destroyed on arrival
+    private GameObject MakePromotionStandIn(PieceColor color)
+    {
+        if (!_lookup.TryGetValue((PieceType.Pawn, color), out GameObject prefab) || prefab == null)
+            return null;   // no pawn prefab -> fall back to the piece just appearing
+
+        GameObject go = Instantiate(prefab, transform);
+        go.transform.localScale *= ScaleFor(PieceType.Pawn);
+        AttachOutline(go, color);   // match the other pieces during the slide
+        return go;
+    }
+
+    // Drop the stand-in and reveal the real promoted piece
+    private void FinalizePromotionIfPending()
+    {
+        if (_promoStandIn != null) { Destroy(_promoStandIn); _promoStandIn = null; }
+        if (_promoRevealed != null) { _promoRevealed.SetActive(true); _promoRevealed = null; }
+    }
+
 
     // ----- History/Navigation -----
     public void StepBack(bool animate = true)
@@ -508,10 +558,9 @@ public class BoardView : MonoBehaviour
 
         Render(target);   // rebuild truth; captured/un-promoted pieces reappear here
 
-        // Reverse-animate the forward edits: DescribeMove(undone) on the pre-move board
-        // gives the same Move edits, run To->From. Castle now retreats king AND rook.
+        // Reverse-animate the forward edits
         if (animate && TryGetMove(undone, out Move move))
-            AnimateMoveEdits(target.DescribeMove(move), reversed: true);
+            AnimateMoveEdits(target.DescribeMove(move), move, reversed: true);
 
         RaiseViewedMoveChanged();
     }
@@ -544,6 +593,7 @@ public class BoardView : MonoBehaviour
         if (_activeTween == null) return;
         StopCoroutine(_activeTween);
         _activeTween = null;
+        FinalizePromotionIfPending();
         SnapAllToRegistry();   // reconcile any mid-slide transforms to committed truth
     }
 
