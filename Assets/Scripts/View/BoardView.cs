@@ -38,6 +38,9 @@ public class BoardView : MonoBehaviour
 
     [SerializeField] private float _knightSnoutNudge = 0.15f;   // shift along facing so the snout sits over the square
 
+    // current-square -> birth-square for surviving knights; non-null only during a Render pass
+    private Dictionary<Square, Square> _knightOrigins;
+
     // hydrated in Awake
     private Dictionary<PieceType, float> _scaleLookup;
     private Dictionary<PieceType, float> _hopLookup;     
@@ -158,17 +161,26 @@ public class BoardView : MonoBehaviour
     {
         _currentBoard = board;
 
-        foreach (GameObject go in _registry.Values)
-            Destroy(go);
-        _registry.Clear();
+        // Get original knight orientation before rendering
+        _knightOrigins = BuildKnightOrigins(PrefixMoves(_viewedMoveCount));
+        try
+        {
+            foreach (GameObject go in _registry.Values)
+                Destroy(go);
+            _registry.Clear();
 
-        for (int file = 0; file < 8; file++)
-            for (int rank = 0; rank < 8; rank++)
-            {
-                Piece piece = board.At(file, rank);
-                if (!piece.IsEmpty)
-                    SpawnPiece(new Square(file, rank), piece);
-            }
+            for (int file = 0; file < 8; file++)
+                for (int rank = 0; rank < 8; rank++)
+                {
+                    Piece piece = board.At(file, rank);
+                    if (!piece.IsEmpty)
+                        SpawnPiece(new Square(file, rank), piece);
+                }
+        }
+        finally
+        {
+            _knightOrigins = null;   // scoped to this rebuild
+        }
     }
 
     // Edit existing pieces toward a new position
@@ -224,7 +236,7 @@ public class BoardView : MonoBehaviour
         pr.File = at.File; pr.Rank = at.Rank; pr.Type = piece.Type; pr.Color = piece.Color;
 
         if (piece.Type == PieceType.Knight)
-            go.transform.localRotation = KnightRotationFor(piece.Color, at);
+            go.transform.localRotation = KnightRotationFor(piece.Color, KnightOrientationSquare(at));
 
         go.transform.localPosition = RestLocalPosition(at, go);
 
@@ -575,4 +587,40 @@ public class BoardView : MonoBehaviour
             if (p[i] != m[i]) return false;
         return true;
     }
+
+    // Track each knight from its origin to correctly render its orientation
+    private static Dictionary<Square, Square> BuildKnightOrigins(string moves)
+    {
+        var origins = new Dictionary<Square, Square>
+        {
+            [new Square(1, 0)] = new Square(1, 0),   // b1
+            [new Square(6, 0)] = new Square(6, 0),   // g1
+            [new Square(1, 7)] = new Square(1, 7),   // b8
+            [new Square(6, 7)] = new Square(6, 7),   // g8
+        };
+
+        foreach (string token in Tokenize(moves))
+        {
+            Move mv;
+            try { mv = Move.FromUci(token); }
+            catch { continue; }
+
+            origins.Remove(mv.To);                                // capture first: any knight on To is gone
+
+            if (origins.TryGetValue(mv.From, out Square birth))   // a tracked knight relocates
+            {
+                origins.Remove(mv.From);
+                origins[mv.To] = birth;
+            }
+
+            if (mv.Promotion == PieceType.Knight)                 // knight born on the promotion square
+                origins[mv.To] = mv.To;
+        }
+
+        return origins;
+    }
+
+    // The square whose file decides which way a knight faces
+    private Square KnightOrientationSquare(Square at) =>
+        _knightOrigins != null && _knightOrigins.TryGetValue(at, out Square birth) ? birth : at;
 }

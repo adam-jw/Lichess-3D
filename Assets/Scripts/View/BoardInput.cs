@@ -298,6 +298,9 @@ public class BoardInput : MonoBehaviour
         // Regenerate only when the selected square actually changed
         if (_selectedFile != _dotsForFile || _selectedRank != _dotsForRank)
         {
+            _dotsForFile = _selectedFile;
+            _dotsForRank = _selectedRank;
+
             _legalDots.Clear();
             _legalCaptures.Clear();
 
