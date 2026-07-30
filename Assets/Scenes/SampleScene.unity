@@ -134,6 +134,7 @@ GameObject:
   - component: {fileID: 168287090}
   - component: {fileID: 168287091}
   - component: {fileID: 168287092}
+  - component: {fileID: 168287093}
   m_Layer: 0
   m_Name: Board
   m_TagString: Untagged
@@ -251,6 +252,10 @@ MonoBehaviour:
   _session: {fileID: 785838380}
   _camera: {fileID: 330585545}
   _boardCenter: {fileID: 168287087}
+  _pivotHeight: 0
+  _defaultPitch: 45
+  _minPitch: 15
+  _maxPitch: 90
 --- !u!114 &168287090
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -336,6 +341,22 @@ MonoBehaviour:
   _highlighter: {fileID: 168287090}
   _fen: 8/8/8/4k3/8/4R3/8/4K3 b - - 0 1
   _liveRefresh: 0
+--- !u!114 &168287093
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 168287085}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5dfe444ab5b0a2c4a9d46868132887c9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraInput
+  _cameraController: {fileID: 168287089}
+  _keyPitchRate: 30
+  _dragDegreesPerPixel: 0.075
+  _invertDrag: 0
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -691,6 +712,9 @@ MonoBehaviour:
   _client: {fileID: 785838378}
   _eventStream: {fileID: 785838379}
   _finishGraceSeconds: 3
+  _reconnectBaseDelay: 1
+  _reconnectMaxDelay: 8
+  _reconnectMaxAttempts: 10
 --- !u!114 &785838381
 MonoBehaviour:
   m_ObjectHideFlags: 0
