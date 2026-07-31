@@ -24,6 +24,7 @@ public class BoardHighlighter : MonoBehaviour
     [SerializeField] private LichessGameSession _session;
     [SerializeField] private GameObject _highlightPrefab;
     [SerializeField] private float _heightOffset = 0.02f;       // float above the board, dodge z-fighting
+    [SerializeField] private float _layerStep = 0.002f;     // separation *between* layers, so coplanar quads sort stably
 
     [Header("Palette")]
     [SerializeField] private Color _hoverColor = new Color(1f, 1f, 1f, 0.12f);      
@@ -198,7 +199,8 @@ public class BoardHighlighter : MonoBehaviour
         foreach ((int file, int rank) in squares)
         {
             GameObject quad = Take();
-            quad.transform.localPosition = _boardView.SquareToLocal(file, rank) + Vector3.up * _heightOffset;
+            quad.transform.localPosition = _boardView.SquareToLocal(file, rank)
+                                         + Vector3.up * (_heightOffset + LayerOrder(layer) * _layerStep);
 
             var mat = quad.GetComponent<Renderer>().material;
             mat.SetColor("_BaseColor", style.color);
@@ -267,6 +269,19 @@ public class BoardHighlighter : MonoBehaviour
         rank = uci[offset + 1] - '1';
         return file >= 0 && file < 8 && rank >= 0 && rank < 8;
     }
+
+    // Stacking order to prevent flickering from multiple highlights at same height
+    private static int LayerOrder(HighlightLayer layer) => layer switch
+    {
+        HighlightLayer.LastMove => 0,   
+        HighlightLayer.Check => 1,
+        HighlightLayer.LegalMove => 2,
+        HighlightLayer.LegalCapture => 3,
+        HighlightLayer.Premove => 4,
+        HighlightLayer.Selection => 5,
+        HighlightLayer.Hover => 6,
+        _ => 0,
+    };
 
     // ----- Outline Tiers -----
 
