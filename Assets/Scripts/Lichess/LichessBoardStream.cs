@@ -10,6 +10,9 @@ public class LichessBoardStream : LichessStreamBase
     // Carries whole state line, not just the moves (status, clocks, etc)
     public event System.Action<GameStateEvent> OnGameStateReceived;
 
+    // Fires on every connect, including reconnects
+    public event System.Action<GameFullEvent> OnGameFullReceived;
+
     public string GameId => _gameId;
 
     public void Initialize(LichessAuthManager authManager, LichessClient client, string gameId)
@@ -26,6 +29,9 @@ public class LichessBoardStream : LichessStreamBase
 
     protected override void HandleLine(string line)
     {
+        // DEBUG TOOL: TO BE REMOVED WHEN GAME RESULT ISSUE IS FIXED
+        Debug.Log("[DIAG] board line: " + line);
+
         var baseEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessEventBase>(line);
         GameStateEvent state;
 
@@ -33,11 +39,14 @@ public class LichessBoardStream : LichessStreamBase
         {
             case "gameFull":
                 var full = Newtonsoft.Json.JsonConvert.DeserializeObject<GameFullEvent>(line);
+
                 if (full.initialFen != "startpos")
                 {
                     Debug.LogError("Non-standard starting position not supported: " + full.initialFen);
                     return;
                 }
+
+                OnGameFullReceived?.Invoke(full);
                 state = full.state;   // gameFull nests a gameState
                 break;
 

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -6,6 +7,10 @@ using UnityEngine.Networking;
 public class LichessClient : MonoBehaviour
 {
     private LichessAuthManager _authManager;
+
+    // The logged-in account, or null until the fetch completes
+    public LichessAccount Account { get; private set; }
+    public event System.Action<LichessAccount> OnAccountLoaded;
 
     void Awake()
     {
@@ -31,8 +36,19 @@ public class LichessClient : MonoBehaviour
         yield return Get("https://lichess.org/api/account",
             onSuccess: json =>
             {
-                LichessAccount account = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessAccount>(json);
+                LichessAccount account =
+                    Newtonsoft.Json.JsonConvert.DeserializeObject<LichessAccount>(json);
+
+                if (account == null)
+                {
+                    Debug.LogError("Account fetch returned unparseable JSON.");
+                    return;
+                }
+
+                Account = account;
                 Debug.Log("Logged in as: " + account.username);
+                Debug.Log("Rapid rating: " + account.GetPerf(LichessSpeed.Rapid)?.rating);
+                OnAccountLoaded?.Invoke(account);
             },
             onError: error => Debug.LogError("Account fetch failed: " + error));
     }
@@ -91,4 +107,28 @@ public class LichessAccount
 {
     public string id;
     public string username;
+
+    public Dictionary<string, Perf> perfs;
+
+    // Returns null if the account has never played that speed
+    public Perf GetPerf(string speedKey)
+    {
+        if (perfs == null || string.IsNullOrEmpty(speedKey))
+            return null;
+
+        return perfs.TryGetValue(speedKey, out Perf perf) ? perf : null;
+    }
+}
+
+[System.Serializable]
+public class Perf
+{
+    public int games;
+    public int rating;
+    public int rd;      // rating deviation
+    public int prog;    // recent progression
+    public bool? prov;
+
+    public int? rank;
+    public bool IsProvisional => prov == true;
 }

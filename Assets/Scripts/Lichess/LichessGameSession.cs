@@ -38,9 +38,13 @@ public class LichessGameSession : MonoBehaviour
     private bool _sawTerminalStatus; // Did the board stream tell us in-band the game is over?
     private string _finalStatus;
 
+    public string FinalStatus => _finalStatus;
+    public string FinalWinner { get; private set; }
+
     public event System.Action<GameEventInfo> OnGameStarted;
     public event System.Action<string> OnMovesReceived;              // for BoardView
     public event System.Action<GameStateEvent> OnGameStateReceived;  // clocks, result, etc.
+    public event System.Action<GameFullEvent> OnGameFullReceived;
     public event System.Action<GameEndReason, string> OnGameEnded;   // reason, final status
     public event System.Action OnMyTurnBegan;
 
@@ -84,10 +88,12 @@ public class LichessGameSession : MonoBehaviour
         IsGameActive = true;
         _sawTerminalStatus = false;
         _finalStatus = null;
+        FinalWinner = null;
 
         // Fresh object, therefore no stale state to reset
         _boardStream = gameObject.AddComponent<LichessBoardStream>();
         _boardStream.OnGameStateReceived += HandleGameState;
+        _boardStream.OnGameFullReceived += HandleGameFull;
         _boardStream.OnStreamEnded += HandleStreamEnded;
         _boardStream.Initialize(_authManager, _client, game.gameId);
         _boardStream.StartStream();
@@ -125,9 +131,15 @@ public class LichessGameSession : MonoBehaviour
         {
             _sawTerminalStatus = true;
             _finalStatus = state.status;
+            FinalWinner = state.winner;
             Debug.Log("Session: game over by '" + state.status + "'" +
                       (string.IsNullOrEmpty(state.winner) ? "" : ", winner " + state.winner));
         }
+    }
+
+    private void HandleGameFull(GameFullEvent full)
+    {
+        OnGameFullReceived?.Invoke(full);
     }
 
     // Called by BoardInput 
@@ -166,6 +178,10 @@ public class LichessGameSession : MonoBehaviour
     // The board stream's connection closed, cleanly or by connection drop
     private void HandleStreamEnded(StreamEndReason streamEnd)
     {
+        // DEBUG TOOL: TO BE REMOVED WHEN GAME RESULT ISSUE IS FIXED
+        Debug.Log("[DIAG] board stream ended: reason=" + streamEnd +
+                  " sawTerminal=" + _sawTerminalStatus);
+
         if (!IsGameActive)
             return;
 
@@ -222,6 +238,17 @@ public class LichessGameSession : MonoBehaviour
         if (!IsGameActive || game.gameId != CurrentGameId)
             return;
 
+        // DEBUG TOOL: TO BE REMOVED WHEN GAME RESULT ISSUE IS FIXED
+        Debug.Log("[DIAG] gameFinish: streaming=" +
+                  (_boardStream != null && _boardStream.IsStreaming));
+
+        // Fallback source for game result
+        if (_finalStatus == null && game.status != null)
+        {
+            _finalStatus = game.status.name;
+            FinalWinner = game.winner;
+        }
+
         _sawTerminalStatus = true;
 
         // Stream healthy: let it deliver the final state, then close 
@@ -274,6 +301,7 @@ public class LichessGameSession : MonoBehaviour
         if (_boardStream != null)
         {
             _boardStream.OnGameStateReceived -= HandleGameState;
+            _boardStream.OnGameFullReceived -= HandleGameFull;
             _boardStream.OnStreamEnded -= HandleStreamEnded;
             _boardStream.StopStream();
 

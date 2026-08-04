@@ -17,6 +17,8 @@ public class GameEventInfo
     public string color;        // "white" or "black"; which side we play
     public bool isMyTurn;
     public GameOpponent opponent;
+    public GameStatusInfo status;   // populated on gameFinish
+    public string winner;           // "white" / "black" / null (draw or aborted)
 }
 
 // Full second-pass shape for a gameStart or gameFinish event.
@@ -50,7 +52,32 @@ public class GameFullEvent
 {
     public string type;        // "gameFull"
     public string initialFen;  // "startpos" for standard games
+    public string speed;       
+    public bool rated;
+    public GameClock clock;    // null for correspondence
+    public GamePlayer white;
+    public GamePlayer black;
     public GameStateEvent state;
+}
+
+// Clock settings, in MS
+public class GameClock
+{
+    public int initial;
+    public int increment;
+}
+
+public class GamePlayer
+{
+    public string id;
+    public string name;
+    public string title;        // "GM", "IM", ... or null
+    public int? rating;         // absent for AI opponents
+    public bool? provisional;   // absent means not provisional
+    public int? aiLevel;        // present only for AI opponents
+
+    public bool IsAI => aiLevel.HasValue;
+    public bool IsProvisional => provisional == true;
 }
 
 // Whether Game is still going or not
@@ -65,6 +92,12 @@ public static class GameStatus
         // e.g. (mate, resign, stalemate, timeout, draw, outoftime, aborted, etc)
         return status != "created" && status != "started";
     }
+}
+
+public class GameStatusInfo
+{
+    public int id;
+    public string name;    // "resign", "mate", "outoftime", "draw", "aborted", etc.
 }
 
 // Why a game stopped

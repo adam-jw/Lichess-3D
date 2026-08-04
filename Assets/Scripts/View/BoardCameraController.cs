@@ -77,6 +77,9 @@ public class BoardCameraController : MonoBehaviour
     public float MaxPitch => _maxPitch;
     public bool IsFlipped => _flipped;
 
+    // Fired whenever the pose changes
+    public event System.Action OnViewChanged;
+
     private void Awake()
     {
         if (_camera == null)
@@ -206,5 +209,6 @@ public class BoardCameraController : MonoBehaviour
         Vector3 position = Pivot - rotation * Vector3.forward * _distance;
 
         _camera.transform.SetPositionAndRotation(position, rotation);
+        OnViewChanged?.Invoke();
     }
 }

@@ -30,6 +30,9 @@ public class LichessSeekStream : LichessStreamBase
 
     public bool IsSeeking => IsStreaming;
 
+    // Used by the idle-state UI to pick which user rating to show before a game exists
+    public string SeekSpeed => LichessSpeed.FromClock(_timeMinutes * 60f, _incrementSeconds);
+
     public void StartSeek()
     {
         if (IsSeeking)
@@ -44,7 +47,7 @@ public class LichessSeekStream : LichessStreamBase
             return;
         }
 
-        Debug.Log("Seeking " + _timeMinutes + "+" + _incrementSeconds +
+        Debug.Log("Seeking " + SeekSpeed + ": " + _timeMinutes + "+" + _incrementSeconds +
                   (_rated ? " rated" : " casual") + "...");
 
         StartStream();   // Open the connection = place the seek
