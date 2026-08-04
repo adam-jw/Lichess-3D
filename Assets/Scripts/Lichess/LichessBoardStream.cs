@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using UnityEngine;
 
 // Per-game stream: one of these exists for exactly one game
@@ -29,9 +30,6 @@ public class LichessBoardStream : LichessStreamBase
 
     protected override void HandleLine(string line)
     {
-        // DEBUG TOOL: TO BE REMOVED WHEN GAME RESULT ISSUE IS FIXED
-        Debug.Log("[DIAG] board line: " + line);
-
         var baseEvent = Newtonsoft.Json.JsonConvert.DeserializeObject<LichessEventBase>(line);
         GameStateEvent state;
 
@@ -66,9 +64,7 @@ public class LichessBoardStream : LichessStreamBase
     {
         string url = "https://lichess.org/api/board/game/" + _gameId + "/move/" + uciMove;
 
-        WWWForm emptyForm = new WWWForm(); // endpoint reads gameId and move from the URL path, so no body to send
-
-        StartCoroutine(_client.Post(url, emptyForm,
+        StartCoroutine(_client.Post(url, null,
             onSuccess: response => Debug.Log("Move sent successfully: " + uciMove),
             onError: error => Debug.LogError("Move failed (" + uciMove + "): " + error)));
     }

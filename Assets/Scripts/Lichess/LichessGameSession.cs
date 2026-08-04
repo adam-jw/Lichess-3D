@@ -178,10 +178,6 @@ public class LichessGameSession : MonoBehaviour
     // The board stream's connection closed, cleanly or by connection drop
     private void HandleStreamEnded(StreamEndReason streamEnd)
     {
-        // DEBUG TOOL: TO BE REMOVED WHEN GAME RESULT ISSUE IS FIXED
-        Debug.Log("[DIAG] board stream ended: reason=" + streamEnd +
-                  " sawTerminal=" + _sawTerminalStatus);
-
         if (!IsGameActive)
             return;
 
@@ -237,10 +233,6 @@ public class LichessGameSession : MonoBehaviour
     {
         if (!IsGameActive || game.gameId != CurrentGameId)
             return;
-
-        // DEBUG TOOL: TO BE REMOVED WHEN GAME RESULT ISSUE IS FIXED
-        Debug.Log("[DIAG] gameFinish: streaming=" +
-                  (_boardStream != null && _boardStream.IsStreaming));
 
         // Fallback source for game result
         if (_finalStatus == null && game.status != null)

@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Networking;
+using System.Net.Http;
 
 // Class for making authenticated HTTP requests so other classes don't need access to tokens/headers
 public class LichessClient : MonoBehaviour
@@ -11,6 +11,12 @@ public class LichessClient : MonoBehaviour
     // The logged-in account, or null until the fetch completes
     public LichessAccount Account { get; private set; }
     public event System.Action<LichessAccount> OnAccountLoaded;
+
+    // nginx's 10s idle timer starts when a response completes; warmer uses this to decide whether to ping
+    public float SecondsSinceLastRequest => Time.realtimeSinceStartup - _lastRequestCompletedAt;
+    private float _lastRequestCompletedAt;
+
+    public int RequestsInFlight { get; private set; }
 
     void Awake()
     {
@@ -53,8 +59,26 @@ public class LichessClient : MonoBehaviour
             onError: error => Debug.LogError("Account fetch failed: " + error));
     }
 
-    // Makes an authenticated GET request and returns the response body via callback
+    // One client for the whole process: a shared HttpClient keeps its connection pool alive
+    private static readonly HttpClient _http = new HttpClient
+    {
+        Timeout = System.TimeSpan.FromSeconds(20)
+    };
+
     public IEnumerator Get(string url, System.Action<string> onSuccess, System.Action<string> onError = null)
+    {
+        return Send(HttpMethod.Get, url, null, onSuccess, onError);
+    }
+
+    // Fields are optional: most Lichess POSTs carry everything in the URL path
+    public IEnumerator Post(string url, Dictionary<string, string> fields,
+                            System.Action<string> onSuccess, System.Action<string> onError = null)
+    {
+        return Send(HttpMethod.Post, url, fields, onSuccess, onError);
+    }
+
+    private IEnumerator Send(HttpMethod method, string url, Dictionary<string, string> fields,
+                             System.Action<string> onSuccess, System.Action<string> onError)
     {
         if (!_authManager.IsAuthenticated)
         {
@@ -62,43 +86,58 @@ public class LichessClient : MonoBehaviour
             yield break;
         }
 
-        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        var request = new HttpRequestMessage(method, url);
+        request.Headers.Add("Authorization", "Bearer " + _authManager.AccessToken);
+
+        if (fields != null && fields.Count > 0)
+            request.Content = new FormUrlEncodedContent(fields);
+
+        var pending = new Pending();
+        RequestsInFlight += 1;
+        _ = Dispatch(request, pending);          // leaves the main thread here
+
+        yield return new WaitUntil(() => pending.Done);
+        
+        RequestsInFlight -= 1;
+        _lastRequestCompletedAt = Time.realtimeSinceStartup;
+
+        if (pending.Error != null)
+            onError?.Invoke(pending.Error);
+        else
+            onSuccess?.Invoke(pending.Body);
+    }
+
+    private static async System.Threading.Tasks.Task Dispatch(HttpRequestMessage request, Pending pending)
+    {
+        try
         {
-            request.SetRequestHeader("Authorization", "Bearer " + _authManager.AccessToken);
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
+            using (HttpResponseMessage response = await _http.SendAsync(request))
             {
-                onError?.Invoke(request.error);
-                yield break;
+                string body = await response.Content.ReadAsStringAsync();
+                if (response.IsSuccessStatusCode)
+                    pending.Body = body;
+                else
+                    pending.Error = (int)response.StatusCode + " " + response.ReasonPhrase + ": " + body;
             }
-
-            onSuccess?.Invoke(request.downloadHandler.text);
+        }
+        catch (System.Exception e)
+        {
+            pending.Error = e.Message;
+        }
+        finally
+        {
+            request.Dispose();
+            pending.Done = true;              // MUST be the last write
         }
     }
 
-    // Makes an authenticated POST request with form data
-    public IEnumerator Post(string url, WWWForm form, System.Action<string> onSuccess, System.Action<string> onError = null)
+    // Carries one request's outcome from a thread pool thread back to the coroutine
+    private class Pending
     {
-        if (!_authManager.IsAuthenticated)
-        {
-            onError?.Invoke("Not authenticated");
-            yield break;
-        }
+        public string Body;
+        public string Error;
 
-        using (UnityWebRequest request = UnityWebRequest.Post(url, form))
-        {
-            request.SetRequestHeader("Authorization", "Bearer " + _authManager.AccessToken);
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                onError?.Invoke(request.error);
-                yield break;
-            }
-
-            onSuccess?.Invoke(request.downloadHandler.text);
-        }
+        public volatile bool Done;
     }
 }
 

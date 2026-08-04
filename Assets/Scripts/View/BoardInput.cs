@@ -23,6 +23,9 @@ public class BoardInput : MonoBehaviour
     private string _premoveUci;
     private int _preFromFile, _preFromRank, _preToFile, _preToRank;
 
+    // True when a move could be sent at any moment: a piece is held, or a premove is queued.
+    public bool MoveIsPending => _hasSelection || _hasPremove;
+
     private void Awake()
     {
         if (_camera == null)
