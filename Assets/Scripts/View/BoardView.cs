@@ -83,6 +83,24 @@ public class BoardView : MonoBehaviour
     // Announces the move token that produced the displayed position (highlighter listens)
     public event System.Action<string> OnViewedMoveChanged;
 
+    public enum PlySource { Stream, HistoryForward, HistoryBack }
+
+    public readonly struct PlyApplied
+    {
+        public readonly Move Move;
+        public readonly IReadOnlyList<PieceEdit> Edits;
+        public readonly BoardState Position;
+        public readonly PlySource Source;
+        public readonly bool Animated;
+
+        public PlyApplied(Move move, IReadOnlyList<PieceEdit> edits,
+                          BoardState position, PlySource source, bool animated)
+        { Move = move; Edits = edits; Position = position; Source = source; Animated = animated; }
+    }
+
+    public event System.Action<PlyApplied> OnPlyApplied;
+
+
     // ----- Diff Diagnostics -----
     [Header("Diff diagnostics")]
     [SerializeField] private bool _verifyRegistryAfterDiff = true;   // drift detector; turn off once trusted
@@ -363,7 +381,7 @@ public class BoardView : MonoBehaviour
             BoardState newBoard = BoardState.FromMoves(moves);
 
             if (IsSingleNewMove(previousLive, moves, out string moveToken))
-                ApplyPlyToView(BoardState.FromMoves(previousLive), moveToken, newBoard, animate: true);
+                ApplyPlyToView(BoardState.FromMoves(previousLive), moveToken, newBoard, animate: true, source: PlySource.Stream);
             else
                 Render(newBoard);
 
@@ -376,31 +394,10 @@ public class BoardView : MonoBehaviour
         }
     }
 
-    // Single forward ply: edit existing pieces toward newBoard via model's edit set
-    private void ApplyMoveToView(string previousMoves, string moveToken, BoardState newBoard)
-    {
-        try
-        {
-            BoardState previousBoard = BoardState.FromMoves(previousMoves);
-            Move move = Move.FromUci(moveToken);
-            IReadOnlyList<PieceEdit> edits = previousBoard.DescribeMove(move);
-
-            _currentBoard = newBoard;   // commit logical truth; edits bring registry/PieceRef/transforms in line
-            ApplyEdits(edits);
-
-            if (_verifyRegistryAfterDiff)
-                VerifyRegistryMatches(newBoard);
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogWarning($"Diff failed for '{moveToken}' ({ex.Message}); rebuilding from scratch.", this);
-            Render(newBoard);
-        }
-    }
 
     // One forward ply - commit the identity-preserving diff, then optionally
     // slide the moved pieces into place. Failure rebuilds from scratch
-    private void ApplyPlyToView(BoardState before, string moveToken, BoardState target, bool animate)
+    private void ApplyPlyToView(BoardState before, string moveToken, BoardState target, bool animate, PlySource source)
     {
         try
         {
@@ -415,6 +412,8 @@ public class BoardView : MonoBehaviour
 
             if (animate)
                 AnimateMoveEdits(edits, move);   // rewind + slide as a visual overlay
+
+            OnPlyApplied?.Invoke(new PlyApplied(move, edits, target, source, animate));
         }
         catch (System.Exception ex)
         {
@@ -581,7 +580,7 @@ public class BoardView : MonoBehaviour
         string move = ViewedLastMove();
         BoardState target = BoardState.FromMoves(PrefixMoves(_viewedMoveCount));
 
-        ApplyPlyToView(before, move, target, animate);
+        ApplyPlyToView(before, move, target, animate, PlySource.HistoryForward);
         RaiseViewedMoveChanged();
     }
 

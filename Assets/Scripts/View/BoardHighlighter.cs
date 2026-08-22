@@ -151,24 +151,6 @@ public class BoardHighlighter : MonoBehaviour
 
     // ---------- Game-state layer: last move pulled from the stream ----------
 
-    private void HandleMovesReceived(string moves)
-    {
-        if (string.IsNullOrWhiteSpace(moves))
-        {
-            ClearLayer(HighlightLayer.LastMove);   // new game / no moves yet
-            return;
-        }
-
-        string[] tokens = moves.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
-        string last = tokens[tokens.Length - 1];   // the move just played, e.g. "e2e4" or "e7e8q"
-
-        if (TryParseSquare(last, 0, out int fromFile, out int fromRank) &&
-            TryParseSquare(last, 2, out int toFile, out int toRank))
-            SetLayer(HighlightLayer.LastMove, _lastMoveColor, (fromFile, fromRank), (toFile, toRank));
-        else
-            ClearLayer(HighlightLayer.LastMove);
-    }
-
     // Reconcile a layer's quads to exactly 'squares', in 'color'
     private void SetLayer(HighlightLayer layer, Color color, params (int file, int rank)[] squares)
         => SetLayer(layer, FillStyle(color), squares);
