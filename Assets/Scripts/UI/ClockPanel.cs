@@ -1,6 +1,8 @@
 using UnityEngine;
 
 // Owns the two clock displays: which player each belongs to, and which sits on top
+
+// Holds no game state of its own; which color we are lives in session.Snapshot
 public class ClockPanel : MonoBehaviour
 {
     [SerializeField] private LichessGameSession _session;
@@ -20,8 +22,7 @@ public class ClockPanel : MonoBehaviour
     [Tooltip("Below this, tenths of a second are shown.")]
     [SerializeField] private float _tenthsSeconds = 10f;
 
-    private bool _hasGame;
-    private PieceColor _myColor;
+    private GameSnapshot Snapshot => _session != null ? _session.Snapshot : null;
 
     private void OnEnable()
     {
@@ -43,29 +44,23 @@ public class ClockPanel : MonoBehaviour
             _cameraController.OnViewChanged -= HandleViewChanged;
     }
 
-    private void HandleGameStarted(GameEventInfo game)
-    {
-        _hasGame = true;
-        _myColor = _session.MyColor ?? PieceColor.White;
-        ApplyOrdering();
-    }
+    private void HandleGameStarted(GameEventInfo game) => ApplyOrdering();
 
     private void HandleViewChanged() => ApplyOrdering();
 
     private void Update()
     {
-        bool visible = _hasGame && _clock != null && _clock.HasClock;
+        GameSnapshot snap = Snapshot;
+
+        bool visible = snap != null && snap.HasGame && _clock != null && _clock.HasClock;
 
         if (_clockA != null) _clockA.SetVisible(visible);
         if (_clockB != null) _clockB.SetVisible(visible);
 
         if (!visible) return;
 
-        PieceColor opponentColor =
-            _myColor == PieceColor.White ? PieceColor.Black : PieceColor.White;
-
-        Render(_clockA, _myColor);
-        Render(_clockB, opponentColor);
+        Render(_clockA, snap.MyColor);
+        Render(_clockB, snap.OpponentColor);
     }
 
     private void Render(ClockDisplay display, PieceColor color)

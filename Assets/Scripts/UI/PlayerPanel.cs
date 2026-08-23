@@ -1,9 +1,11 @@
-using TMPro;
 using UnityEngine;
 
 // Owns the two nameplates: decides who each one shows and which sits on top
 //
-// Nameplate positions mirror board position; Panel clears @ OnGameStarted 
+// Nameplate positions mirror board position
+//
+// Holds NO game state of its own: who is playing lives in session.Snapshot 
+// This class is purely formatting and layout
 public class PlayerPanel : MonoBehaviour
 {
     [SerializeField] private LichessClient _client;
@@ -26,17 +28,10 @@ public class PlayerPanel : MonoBehaviour
     [SerializeField] private bool _markProvisional = true;
     [Tooltip("Prefix titled players with GM / IM / etc.")]
     [SerializeField] private bool _showTitles = true;
+    [Tooltip("Show 'Level N' instead of a rating for Lichess AI opponents.")]
+    [SerializeField] private bool _showAiLevel = true;
 
-    // ----- Snapshot of the current or most recent game -----
-    private bool _hasGame;
-    private PieceColor _myColour;
-    private string _opponentName;
-    private int? _opponentRating;
-    private bool _opponentProvisional;
-    private string _opponentTitle;
-    private int? _myRating;              // from gameFull; null until it arrives
-    private bool _myProvisional;
-    private string _gameSpeed;           // authoritative once gameFull lands
+    private GameSnapshot Snapshot => _session != null ? _session.Snapshot : null;
 
     private void OnEnable()
     {
@@ -75,57 +70,11 @@ public class PlayerPanel : MonoBehaviour
             _cameraController.OnViewChanged -= HandleViewChanged;
     }
 
+    // Snapshot has already absorbed the event by the time it reaches us;
+    // Nothing to record, only to redraw
     private void HandleAccountLoaded(LichessAccount account) => Refresh();
-
-    // Only place the snapshot is reset
-    private void HandleGameStarted(GameEventInfo game)
-    {
-        _hasGame = true;
-        _myColour = _session.MyColor ?? PieceColor.White;
-
-        _opponentName = game.opponent != null ? game.opponent.username : "Opponent";
-        _opponentRating = game.opponent != null ? game.opponent.rating : null;
-
-        // Cleared rather than left stale: these belong to the previous game until the
-        // gameFull for this one arrives.
-        _opponentProvisional = false;
-        _opponentTitle = null;
-        _myRating = null;
-        _myProvisional = false;
-        _gameSpeed = null;
-
-        Refresh();
-    }
-
-    private void HandleGameFull(GameFullEvent full)
-    {
-        if (!_hasGame) return;
-
-        _gameSpeed = full.speed;
-
-        GamePlayer me = _myColour == PieceColor.White ? full.white : full.black;
-        GamePlayer them = _myColour == PieceColor.White ? full.black : full.white;
-
-        if (me != null)
-        {
-            _myRating = me.rating;
-            _myProvisional = me.IsProvisional;
-        }
-
-        if (them != null)
-        {
-            // gameFull uses "name" where the gameStart opponent object uses "username".
-            if (!string.IsNullOrEmpty(them.name))
-                _opponentName = them.name;
-
-            _opponentRating = them.rating;
-            _opponentProvisional = them.IsProvisional;
-            _opponentTitle = them.title;
-        }
-
-        Refresh();
-    }
-
+    private void HandleGameStarted(GameEventInfo game) => Refresh();
+    private void HandleGameFull(GameFullEvent full) => Refresh();
     private void HandleViewChanged() => ApplyOrdering();
 
     public void Refresh()
@@ -133,9 +82,14 @@ public class PlayerPanel : MonoBehaviour
         if (_nameplateA == null || _nameplateB == null) return;
 
         LichessAccount account = _client != null ? _client.Account : null;
-        string myName = account != null ? account.username : _loadingLabel;
+        GameSnapshot snap = Snapshot;
 
-        if (!_hasGame)
+        // Our name: the wire's version once gameFull lands, otherwise the account
+        string myName = snap != null && !string.IsNullOrEmpty(snap.MyName)
+            ? snap.MyName
+            : (account != null ? account.username : _loadingLabel);
+
+        if (snap == null || !snap.HasGame)
         {
             _nameplateA.SetVisible(true);
             _nameplateA.SetPlayer(myName, IdleRatingText(account), null);
@@ -143,24 +97,28 @@ public class PlayerPanel : MonoBehaviour
             return;
         }
 
-        PieceColor opponentColour =
-            _myColour == PieceColor.White ? PieceColor.Black : PieceColor.White;
-
         _nameplateA.SetVisible(true);
         _nameplateB.SetVisible(true);
-        _nameplateA.SetPlayer(myName, MyRatingText(account), _myColour);
-        _nameplateB.SetPlayer(Decorate(_opponentTitle, _opponentName),
-                              RatingText(_opponentRating, _opponentProvisional),
-                              opponentColour);
+
+        _nameplateA.SetPlayer(Decorate(snap.MyTitle, myName),
+                              MyRatingText(account, snap),
+                              snap.MyColor);
+
+        _nameplateB.SetPlayer(Decorate(snap.OpponentTitle, snap.OpponentName ?? "Opponent"),
+                              OpponentRatingText(snap),
+                              snap.OpponentColor);
 
         ApplyOrdering();
     }
 
     // A is you, B is the opponent. Normally you are nearest the camera, so you sit at
-    // the bottom; flipped, you are at the far end and move to the top.
+    // the bottom; flipped, you are at the far end and move to the top
     private void ApplyOrdering()
     {
-        if (_nameplateA == null || _nameplateB == null || !_hasGame) return;
+        if (_nameplateA == null || _nameplateB == null) return;
+
+        GameSnapshot snap = Snapshot;
+        if (snap == null || !snap.HasGame) return;
 
         bool flipped = _cameraController != null && _cameraController.IsFlipped;
 
@@ -179,20 +137,29 @@ public class PlayerPanel : MonoBehaviour
         return perf == null ? _unratedLabel : RatingText(perf.rating, perf.IsProvisional);
     }
 
-    // Prefers gameFull's figure; Falls back to the perfs lookup
-    private string MyRatingText(LichessAccount account)
+    // Prefers gameFull's figure; falls back to the perfs lookup
+    private string MyRatingText(LichessAccount account, GameSnapshot snap)
     {
-        if (_myRating.HasValue)
-            return RatingText(_myRating.Value, _myProvisional);
+        if (snap.MyRating.HasValue)
+            return RatingText(snap.MyRating.Value, snap.MyProvisional);
 
         if (account == null) return "";
 
-        string speedKey = !string.IsNullOrEmpty(_gameSpeed)
-            ? _gameSpeed
+        string speedKey = !string.IsNullOrEmpty(snap.Speed)
+            ? snap.Speed
             : (_seekStream != null ? _seekStream.SeekSpeed : LichessSpeed.Rapid);
 
         Perf perf = account.GetPerf(speedKey);
         return perf == null ? _unratedLabel : RatingText(perf.rating, perf.IsProvisional);
+    }
+
+    // if opponent is AI shows its 'Level' rather than unrated
+    private string OpponentRatingText(GameSnapshot snap)
+    {
+        if (_showAiLevel && snap.OpponentIsAI)
+            return "Level " + snap.OpponentAiLevel.Value;
+
+        return RatingText(snap.OpponentRating, snap.OpponentProvisional);
     }
 
     private string RatingText(int? rating, bool provisional)

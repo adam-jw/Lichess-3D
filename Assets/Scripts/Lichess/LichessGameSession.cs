@@ -28,6 +28,10 @@ public class LichessGameSession : MonoBehaviour
     public PieceColor? SideToMove { get; private set; }  // whose move it is now; null between games
     public bool IsGameActive { get; private set; }
 
+    // Durable record of the current-or-most-recent game
+    private readonly GameSnapshot _snapshot = new GameSnapshot();
+    public GameSnapshot Snapshot => _snapshot;
+
     public bool IsMyTurn =>
         IsGameActive && MyColor.HasValue && SideToMove == MyColor;
 
@@ -100,6 +104,8 @@ public class LichessGameSession : MonoBehaviour
 
         _reconnector.NotifyConnected();
 
+        _snapshot.Begin(game, MyColor ?? PieceColor.White);
+
         Debug.Log("Session: game " + CurrentGameId + " begun, playing " + MyColor);
         OnGameStarted?.Invoke(game);
     }
@@ -120,6 +126,8 @@ public class LichessGameSession : MonoBehaviour
 
         bool terminal = GameStatus.IsTerminal(state.status);
 
+        _snapshot.ApplyState(state);
+
         OnGameStateReceived?.Invoke(state);
         OnMovesReceived?.Invoke(state.moves);
 
@@ -139,6 +147,7 @@ public class LichessGameSession : MonoBehaviour
 
     private void HandleGameFull(GameFullEvent full)
     {
+        _snapshot.ApplyGameFull(full);
         OnGameFullReceived?.Invoke(full);
     }
 
@@ -226,7 +235,7 @@ public class LichessGameSession : MonoBehaviour
 
 
     // Lichess's out-of-band confirmation on the account event stream
-    // ADVISORY ONLY: board stream still owes the FINAL gameState (mating
+    // Advisory only: board stream still owes the final gameState (mating
     // move + terminal status); Lichess closes that stream itself once game ends
     // Aborting here would discard bytes not yet read
     private void HandleGameFinish(GameEventInfo game)
@@ -245,7 +254,7 @@ public class LichessGameSession : MonoBehaviour
 
         // Stream healthy: let it deliver the final state, then close 
         // Mid-reconnect: won't deliver anything, end now
-        if (_boardStream != null && _boardStream.IsStreaming)
+        if (_boardStream != null && _boardStream.IsDelivering)
         {
             if (_finishGrace == null)
                 _finishGrace = StartCoroutine(CloseBoardStreamAfterGrace());
@@ -263,7 +272,7 @@ public class LichessGameSession : MonoBehaviour
 
         // Normal path: server closes, HandleStreamEnded runs, IsGameActive goes false, loop exits
         while (Time.time < deadline && IsGameActive &&
-               _boardStream != null && _boardStream.IsStreaming)
+               _boardStream != null && _boardStream.IsDelivering)
             yield return null;
 
         _finishGrace = null;
@@ -305,6 +314,8 @@ public class LichessGameSession : MonoBehaviour
 
         Debug.Log("Session: game " + CurrentGameId + " ended (" + reason + ")" +
                   (_finalStatus == null ? "" : " status=" + _finalStatus));
+
+        _snapshot.End(reason, _finalStatus, FinalWinner);
 
         CurrentGameId = null;
         MyColor = null;

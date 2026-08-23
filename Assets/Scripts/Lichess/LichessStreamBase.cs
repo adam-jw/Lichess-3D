@@ -46,6 +46,9 @@ public abstract class LichessStreamBase : MonoBehaviour
     // Answers whether a stream is live
     public bool IsStreaming => _streamThread != null && _streamThread.IsAlive;
 
+    // Answers whether more lines may still be delivered
+    public bool IsDelivering => IsStreaming || !_lineQueue.IsEmpty || _endedSignal;
+
 
     // ---------- TEMPLATE METHOD HOLES ----------
 
