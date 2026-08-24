@@ -11,17 +11,26 @@ public static class LichessSpeed
     public const string Classical = "classical";
     public const string Correspondence = "correspondence";
 
-    // Estimates a game's duration as (initial + 40 * increment) seconds and
-    // buckets that into a speed
+    // Bucket boundaries, in estimated seconds
+    public const float BulletFloorSeconds = 30f;
+    public const float BlitzFloorSeconds = 180f;
+    public const float RapidFloorSeconds = 480f;
+    public const float ClassicalFloorSeconds = 1500f;
+
+    // Lichess estimates a game's duration as (initial + 40 * increment) seconds
+    public static float EstimatedSeconds(float initialSeconds, float incrementSeconds) =>
+        initialSeconds + 40f * incrementSeconds;
+
+    // Buckets a clock into a speed
     // Exists only for the IDLE state, where no game exists yet
     public static string FromClock(float initialSeconds, float incrementSeconds)
     {
-        float estimatedSeconds = initialSeconds + 40f * incrementSeconds;
+        float estimatedSeconds = EstimatedSeconds(initialSeconds, incrementSeconds);
 
-        if (estimatedSeconds < 30f) return UltraBullet;
-        if (estimatedSeconds < 180f) return Bullet;
-        if (estimatedSeconds < 480f) return Blitz;
-        if (estimatedSeconds < 1500f) return Rapid;
+        if (estimatedSeconds < BulletFloorSeconds) return UltraBullet;
+        if (estimatedSeconds < BlitzFloorSeconds) return Bullet;
+        if (estimatedSeconds < RapidFloorSeconds) return Blitz;
+        if (estimatedSeconds < ClassicalFloorSeconds) return Rapid;
         return Classical;
     }
 }

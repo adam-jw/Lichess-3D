@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
 // Turns a mouse click into a board square. Two cases: hit a piece's collider
@@ -34,7 +35,7 @@ public class BoardInput : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetMouseButtonDown(0))
+        if (Input.GetMouseButtonDown(0) && !IsPointerOverUI())
             HandleMouseDown();
         else if (Input.GetMouseButtonUp(0))
             HandleMouseUp();
@@ -83,6 +84,9 @@ public class BoardInput : MonoBehaviour
         Debug.Log("Firing premove: " + uci);
         _session.SendMove(uci);
     }
+
+    private static bool IsPointerOverUI() =>
+        EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
 
     private static bool IsPremoveLegal(BoardState board, Move premove)
     {

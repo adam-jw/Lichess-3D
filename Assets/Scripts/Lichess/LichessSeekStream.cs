@@ -3,7 +3,7 @@ using System.Net;
 using System.Text;
 using UnityEngine;
 
-// A seek endpoint is a POST whose response carries no information
+// Seek endpoint = POST whose response carries no information
 
 // The open connection is the seek; Hold it open to stay in the pool,
 // close it and the seek is cancelled
@@ -13,16 +13,14 @@ using UnityEngine;
 public class LichessSeekStream : LichessStreamBase
 {
     [Header("Seek settings")]
-    [Tooltip("Initial clock in minutes. Board API allows Rapid and slower.")]
-    [SerializeField] private float _timeMinutes = 10f;
-
-    [Tooltip("Clock increment in seconds.")]
-    [SerializeField] private int _incrementSeconds = 0;
+    [Tooltip("Default clock. The panel overwrites this before each seek.")]
+    [SerializeField] private TimeControl _timeControl = new TimeControl(10f, 0);
 
     [Tooltip("Leave off while testing - Lichess rates abandoned games.")]
     [SerializeField] private bool _rated = false;
 
     [SerializeField] private string _variant = "standard";
+
     private void Awake()
     {
         _authManager = GetComponent<LichessAuthManager>();
@@ -30,9 +28,31 @@ public class LichessSeekStream : LichessStreamBase
 
     public bool IsSeeking => IsStreaming;
 
-    // Used by the idle-state UI to pick which user rating to show before a game exists
-    public string SeekSpeed => LichessSpeed.FromClock(_timeMinutes * 60f, _incrementSeconds);
+    public TimeControl TimeControl => _timeControl;
+    public bool Rated => _rated;
 
+    // Used by the idle-state UI to pick which user rating to show before a game exists
+    public string SeekSpeed => _timeControl.Speed;
+
+    // Settings are baked into the POST body when the connection opens, so they cannot
+    // change mid-seek: the caller must cancel and re-seek.
+    public void Configure(TimeControl timeControl, bool rated)
+    {
+        if (IsSeeking)
+        {
+            Debug.LogWarning("Configure ignored: already seeking. Cancel first.");
+            return;
+        }
+
+        if (!timeControl.IsBoardApiEligible)
+        {
+            Debug.LogWarning("Seek " + timeControl.Label + " is " + timeControl.Speed +
+                             "; Lichess Board API only accepts Rapid and slower. Attempting seek anyway.");
+        }
+
+        _timeControl = timeControl;
+        _rated = rated;
+    }
     public void StartSeek()
     {
         if (IsSeeking)
@@ -47,7 +67,7 @@ public class LichessSeekStream : LichessStreamBase
             return;
         }
 
-        Debug.Log("Seeking " + SeekSpeed + ": " + _timeMinutes + "+" + _incrementSeconds +
+        Debug.Log("Seeking " + SeekSpeed + ": " + _timeControl.Label +
                   (_rated ? " rated" : " casual") + "...");
 
         StartStream();   // Open the connection = place the seek
@@ -91,8 +111,8 @@ public class LichessSeekStream : LichessStreamBase
         Append(form, "rated", _rated.ToString().ToLowerInvariant());
 
         // InvariantCulture : Need 10.5 not e.g. 10,5 in Europe
-        Append(form, "time", _timeMinutes.ToString(CultureInfo.InvariantCulture));
-        Append(form, "increment", _incrementSeconds.ToString(CultureInfo.InvariantCulture));
+        Append(form, "time", _timeControl.minutes.ToString(CultureInfo.InvariantCulture));
+        Append(form, "increment", _timeControl.increment.ToString(CultureInfo.InvariantCulture));
         Append(form, "variant", _variant);
 
         return form.ToString();
