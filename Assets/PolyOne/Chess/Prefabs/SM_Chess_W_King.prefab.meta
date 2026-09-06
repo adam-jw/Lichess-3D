@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 1c5fa31a3dd4a9d47a01e210f55ba544
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 345196
+  packageName: Props Pack - Chess
+  packageVersion: 0.0.1
+  assetPath: Assets/PolyOne/Chess/Prefabs/SM_Chess_W_King.prefab
+  uploadId: 820306

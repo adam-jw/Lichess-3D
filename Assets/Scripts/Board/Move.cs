@@ -45,7 +45,7 @@ public readonly struct Move : IEquatable<Move>
         _ => throw new ArgumentException($"Bad promotion piece '{c}'"),
     };
 
-    private static char PromotionToChar(PieceType type) => type switch
+    public static char PromotionToChar(PieceType type) => type switch
     {
         PieceType.Queen => 'q',
         PieceType.Rook => 'r',

@@ -49,6 +49,18 @@ public class FindGamePanel : MonoBehaviour
     [SerializeField] private string _signedOutLabel = "Not signed in";
     [SerializeField] private string _seekingStatus = "Waiting for an opponent...";
 
+    [Header("Debug: challenge AI (testing only)")]
+    [SerializeField] private bool _debugAiChallenge = true;
+    [SerializeField] private KeyCode _debugAiKey = KeyCode.F9;
+    [Range(1, 8)]
+    [SerializeField] private int _debugAiLevel = 1;
+    [Tooltip("white, black, or random.")]
+    [SerializeField] private string _debugColor = "white";
+    [Tooltip("Optional. If set, starts a From Position game at this FEN.")]
+    [SerializeField] private string _debugFromFen = "";
+
+    private bool _debugChallengeInFlight;
+
     private enum PanelState { Hidden, SignedOut, Idle, Seeking }
 
     private PanelState _state = PanelState.Hidden;
@@ -130,11 +142,14 @@ public class FindGamePanel : MonoBehaviour
     {
         PanelState next = ComputeState();
 
-        if (_stateValid && next == _state) return;
+        if (!_stateValid || next != _state)
+        {
+            _state = next;
+            _stateValid = true;
+            ApplyState(next);
+        }
 
-        _state = next;
-        _stateValid = true;
-        ApplyState(next);
+        HandleDebugInput();
     }
 
     private PanelState ComputeState()
@@ -226,5 +241,38 @@ public class FindGamePanel : MonoBehaviour
     {
         _authLost = true;
         _stateValid = false;
+    }
+
+    // Quick tester: challenge Lichess AI straight from the start screen for debugging purposes
+    private void HandleDebugInput()
+    {
+        if (!_debugAiChallenge || _debugChallengeInFlight) return;
+        if (_state != PanelState.Idle) return;                 // start screen only
+        if (!Input.GetKeyDown(_debugAiKey)) return;
+        if (_client == null) return;
+
+        var fields = new Dictionary<string, string>
+    {
+        { "level", Mathf.Clamp(_debugAiLevel, 1, 8).ToString() },
+    };
+
+        TimeControl tc = SelectedTimeControl();
+        fields["clock.limit"] = Mathf.RoundToInt(tc.InitialSeconds).ToString();
+        fields["clock.increment"] = tc.increment.ToString();
+
+        if (!string.IsNullOrWhiteSpace(_debugColor))
+            fields["color"] = _debugColor.Trim();
+
+        if (!string.IsNullOrWhiteSpace(_debugFromFen))
+        {
+            fields["variant"] = "fromPosition";
+            fields["fen"] = _debugFromFen.Trim();
+        }
+
+        _debugChallengeInFlight = true;
+        Debug.Log($"[debug] Challenging Lichess AI level {_debugAiLevel}...");
+        StartCoroutine(_client.Post("https://lichess.org/api/challenge/ai", fields,
+            json => { _debugChallengeInFlight = false; Debug.Log("[debug] AI game started."); },
+            err => { _debugChallengeInFlight = false; Debug.LogError("[debug] AI challenge failed: " + err); }));
     }
 }

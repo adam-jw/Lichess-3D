@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: cdc36680d92fe2d45a8998b01e1f1af2
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 345196
+  packageName: Props Pack - Chess
+  packageVersion: 0.0.1
+  assetPath: Assets/PolyOne/Chess/Prefabs/SM_Chess_B_KnightL.prefab
+  uploadId: 820306

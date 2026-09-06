@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 1a9f344c25bc0dd4d928b8dd9e69decf
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 345196
+  packageName: Props Pack - Chess
+  packageVersion: 0.0.1
+  assetPath: Assets/PolyOne/Chess/Prefabs/SM_Chess_W_Queen.prefab
+  uploadId: 820306

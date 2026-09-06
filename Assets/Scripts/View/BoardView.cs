@@ -18,6 +18,16 @@ public class BoardView : MonoBehaviour
     [SerializeField] private float _moveDuration = 0.14f;
     [SerializeField] private float _hopHeight = 0f;   // 0 = flat slide; global default, overridden per-type below
 
+    // Promotion preview: pawn slide shown while the picker is open, before 
+    // a piece is chosen. Registry stays on the origin so every commit/cancel/
+    // rebuild path reconciles without special-casing
+    private bool _hasPreview;
+    private Square _previewFrom, _previewTo;
+    private GameObject _previewPawn;
+    private Coroutine _previewTween;
+
+    public event System.Action OnPromotionPreviewDropped;   // nav/rebuild discarded a live preview
+
     // ----- Per-piece-type overrides -----
     // List ONLY the types that differ from the globals
     [System.Serializable]
@@ -69,6 +79,10 @@ public class BoardView : MonoBehaviour
     private readonly Dictionary<Square, GameObject> _registry = new Dictionary<Square, GameObject>();
 
     public GameObject PieceAt(Square sq) => _registry.TryGetValue(sq, out GameObject go) ? go : null;
+
+    // Prefab for a piece (or null if unmapped). Picker builds loose, unregistered pieces from these (e.g. promotion option pieces)
+    public GameObject GetPiecePrefab(PieceType type, PieceColor color) =>
+        _lookup.TryGetValue((type, color), out GameObject prefab) ? prefab : null;
 
     public event System.Action<GameObject> OnPieceSpawned;
 
@@ -183,6 +197,12 @@ public class BoardView : MonoBehaviour
     {
         _currentBoard = board;
 
+        if (_hasPreview)
+        {
+            ClearPromotionPreview();
+            OnPromotionPreviewDropped?.Invoke();
+        }
+
         // Get original knight orientation before rendering
         _knightOrigins = BuildKnightOrigins(PrefixMoves(_viewedMoveCount));
         try
@@ -296,9 +316,9 @@ public class BoardView : MonoBehaviour
     }
 
     // Builds mesh-only inverted-hull shell as a child of each of the piece's mesh parts
-    private void AttachOutline(GameObject piece, PieceColor color)
+    public PieceOutline AttachOutline(GameObject piece, PieceColor color)
     {
-        if (_outlineMaterial == null) return;
+        if (_outlineMaterial == null) return null;
 
         var shells = new List<MeshRenderer>();
         foreach (MeshFilter mf in piece.GetComponentsInChildren<MeshFilter>())
@@ -315,9 +335,11 @@ public class BoardView : MonoBehaviour
             sr.receiveShadows = false;
             shells.Add(sr);
         }
-        if (shells.Count == 0) return;
+        if (shells.Count == 0) return null;
 
-        piece.AddComponent<PieceOutline>().Initialize(color, shells.ToArray());
+        var outline = piece.AddComponent<PieceOutline>();
+        outline.Initialize(color, shells.ToArray());
+        return outline;
     }
 
     // Per-type value with global fallback
@@ -460,19 +482,28 @@ public class BoardView : MonoBehaviour
         {
             FinalizePromotionIfPending();
 
-            PieceColor color = promotedGo.GetComponent<PieceRef>().Color;
-            GameObject standIn = MakePromotionStandIn(color);
-
-            if (standIn != null)
+            // Previewed promotion: the pawn already slid here and was just destroyed by the
+            // Remove edit, so leave the new piece where it spawned (no second slide)
+            if (_hasPreview && SameSquare(_previewFrom, move.From) && SameSquare(_previewTo, move.To))
             {
-                _promoRevealed = promotedGo;
-                _promoRevealed.SetActive(false);                      
-                _promoStandIn = standIn;
+                ClearPromotionPreview();
+            }
+            else
+            {
+                PieceColor color = promotedGo.GetComponent<PieceRef>().Color;
+                GameObject standIn = MakePromotionStandIn(color);
 
-                Vector3 from = RestLocalPosition(move.From, standIn);
-                Vector3 to = RestLocalPosition(move.To, promotedGo); 
-                standIn.transform.localPosition = from;
-                movers.Add(new MoverAnim { go = standIn, from = from, to = to, hop = HopHeightFor(PieceType.Pawn) });
+                if (standIn != null)
+                {
+                    _promoRevealed = promotedGo;
+                    _promoRevealed.SetActive(false);
+                    _promoStandIn = standIn;
+
+                    Vector3 from = RestLocalPosition(move.From, standIn);
+                    Vector3 to = RestLocalPosition(move.To, promotedGo);
+                    standIn.transform.localPosition = from;
+                    movers.Add(new MoverAnim { go = standIn, from = from, to = to, hop = HopHeightFor(PieceType.Pawn) });
+                }
             }
         }
 
@@ -523,6 +554,8 @@ public class BoardView : MonoBehaviour
         _activeTween = null;
     }
 
+    private static bool SameSquare(Square a, Square b) => a.File == b.File && a.Rank == b.Rank;
+
     // --- Piece promotion animation helpers --- 
 
     // Make throwaway pawn used only for the promotion slide; never registered, destroyed on arrival
@@ -542,6 +575,71 @@ public class BoardView : MonoBehaviour
     {
         if (_promoStandIn != null) { Destroy(_promoStandIn); _promoStandIn = null; }
         if (_promoRevealed != null) { _promoRevealed.SetActive(true); _promoRevealed = null; }
+    }
+
+
+    // ---------- Promotion preview ----------
+
+    public void BeginPromotionPreview(Square from, Square to)
+    {
+        ClearPromotionPreview();   // never stack previews
+        if (!_registry.TryGetValue(from, out GameObject pawn)) return;
+
+        _hasPreview = true;
+        _previewFrom = from;
+        _previewTo = to;
+        _previewPawn = pawn;
+
+        RunPreviewSlide(pawn, RestLocalPosition(to, pawn));
+    }
+
+    // Clicked out of the picker: slide the pawn back where it came from
+    public void CancelPromotionPreview()
+    {
+        if (!_hasPreview) return;
+
+        GameObject pawn = _previewPawn;
+        Square from = _previewFrom;
+        _hasPreview = false;
+        _previewPawn = null;
+
+        if (pawn != null)
+            RunPreviewSlide(pawn, RestLocalPosition(from, pawn));
+    }
+
+    // Forget the preview without sliding; the pawn is being reconciled elsewhere
+    // (destroyed by a Remove edit on commit, or by a Render rebuild on nav)
+    private void ClearPromotionPreview()
+    {
+        if (_previewTween != null) { StopCoroutine(_previewTween); _previewTween = null; }
+        _hasPreview = false;
+        _previewPawn = null;
+    }
+
+    private void RunPreviewSlide(GameObject go, Vector3 to)
+    {
+        if (_previewTween != null) { StopCoroutine(_previewTween); _previewTween = null; }
+        if (go == null) return;
+        _previewTween = StartCoroutine(PreviewSlideRoutine(go, to));
+    }
+
+    private IEnumerator PreviewSlideRoutine(GameObject go, Vector3 to)
+    {
+        Vector3 from = go.transform.localPosition;
+        float hop = HopHeightFor(PieceType.Pawn);
+        float t = 0f;
+        while (t < 1f)
+        {
+            if (go == null) { _previewTween = null; yield break; }
+            t += Time.deltaTime / Mathf.Max(_moveDuration, 0.0001f);
+            float c = Mathf.Clamp01(t);
+            Vector3 pos = Vector3.Lerp(from, to, Mathf.SmoothStep(0f, 1f, c));
+            pos.y += hop * Mathf.Sin(c * Mathf.PI);
+            go.transform.localPosition = pos;
+            yield return null;
+        }
+        if (go != null) go.transform.localPosition = to;
+        _previewTween = null;
     }
 
 

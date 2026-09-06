@@ -10,6 +10,7 @@ public class BoardInput : MonoBehaviour
     [SerializeField] private Camera _camera;   // leave empty to use Camera.main
     [SerializeField] private LichessGameSession _session;
     [SerializeField] private BoardHighlighter _highlighter;
+    [SerializeField] private PromotionPicker _picker;
 
     private bool _hasSelection;
     private int _selectedFile, _selectedRank;
@@ -24,8 +25,11 @@ public class BoardInput : MonoBehaviour
     private string _premoveUci;
     private int _preFromFile, _preFromRank, _preToFile, _preToRank;
 
+    private bool _awaitingPromotion;
+    private string _promoBaseUci;   // from+to, waiting on the picker for its suffix
+
     // True when a move could be sent at any moment: a piece is held, or a premove is queued.
-    public bool MoveIsPending => _hasSelection || _hasPremove;
+    public bool MoveIsPending => _hasSelection || _hasPremove || _awaitingPromotion;
 
     private void Awake()
     {
@@ -35,10 +39,21 @@ public class BoardInput : MonoBehaviour
 
     private void Update()
     {
+        // While the picker is open it owns the mouse; suspend board input and
+        // highlights so nothing behind the picker reacts to the cursor
+        if (_awaitingPromotion)
+        {
+            UpdatePromotionInput();
+            return;
+        }
+
         if (Input.GetMouseButtonDown(0) && !IsPointerOverUI())
             HandleMouseDown();
         else if (Input.GetMouseButtonUp(0))
             HandleMouseUp();
+
+        if (_awaitingPromotion)
+            return;   // a promotion just opened this frame; don't paint highlights over it
 
         UpdateHoverHighlight();
         UpdateSelectionHighlight();
@@ -51,6 +66,7 @@ public class BoardInput : MonoBehaviour
         if (_session == null) return;
         _session.OnMyTurnBegan += HandleMyTurnBegan;
         _session.OnGameEnded += HandleGameEnded;
+        _boardView.OnPromotionPreviewDropped += HandlePromotionPreviewDropped;
     }
 
     private void OnDisable()
@@ -58,6 +74,7 @@ public class BoardInput : MonoBehaviour
         if (_session == null) return;
         _session.OnMyTurnBegan -= HandleMyTurnBegan;
         _session.OnGameEnded -= HandleGameEnded;
+        _boardView.OnPromotionPreviewDropped -= HandlePromotionPreviewDropped;
     }
 
     private void HandleMyTurnBegan()
@@ -99,12 +116,21 @@ public class BoardInput : MonoBehaviour
         return false;
     }
 
-    private void HandleGameEnded(GameEndReason reason, string status) => ClearPremove();
+    private void HandleGameEnded(GameEndReason reason, string status)
+    {
+        ClearPremove();
+        if (_awaitingPromotion) CancelPromotion();
+    }
 
     private void ClearPremove()
     {
         _hasPremove = false;
         _premoveUci = null;
+    }
+
+    private void HandlePromotionPreviewDropped()
+    {
+        if (_awaitingPromotion) FinishPromotion();   // scrub removed the context; just close the picker
     }
 
     private void HandleMouseDown()
@@ -205,25 +231,40 @@ public class BoardInput : MonoBehaviour
         string uci = SquareName(_selectedFile, _selectedRank) + SquareName(destFile, destRank);
 
         Piece moving = board.At(_selectedFile, _selectedRank);
-        if (moving.Type == PieceType.Pawn && (destRank == 0 || destRank == 7))
-            uci += "q";
+        bool isPromotion = moving.Type == PieceType.Pawn && (destRank == 0 || destRank == 7);
 
         int fromFile = _selectedFile, fromRank = _selectedRank;
         _hasSelection = false;
 
         if (_session.IsMyTurn)
         {
+            // Promotion on my own turn -> ask which piece before sending
+            if (isPromotion && _picker != null && _picker.Open(new Square(destFile, destRank), moving.Color))
+            {
+                _awaitingPromotion = true;
+                _promoBaseUci = uci;
+                _boardView.BeginPromotionPreview(new Square(fromFile, fromRank), new Square(destFile, destRank));
+                ClearBoardHighlights();
+                return;
+            }
+
+            if (isPromotion)
+                uci += "q";   // no picker to ask with -> auto-queen
+
             Debug.Log($"Sending move: {uci}");
             _session.SendMove(uci);
             return;
         }
 
-        // Opponent's turn -> queue move
+        // Opponent's turn -> queue move. Premoves always auto-queen
+        if (isPromotion)
+            uci += "q";
+
         _hasPremove = true;
         _premoveUci = uci;
-        _preFromFile = fromFile; 
+        _preFromFile = fromFile;
         _preFromRank = fromRank;
-        _preToFile = destFile; 
+        _preToFile = destFile;
         _preToRank = destRank;
         Debug.Log("Premove queued: " + uci);
     }
@@ -343,6 +384,49 @@ public class BoardInput : MonoBehaviour
             _highlighter.SetPremove(_preFromFile, _preFromRank, _preToFile, _preToRank);
         else
             _highlighter.ClearPremove();
+    }
+
+    private void UpdatePromotionInput()
+    {
+        if (!Input.GetMouseButtonDown(0)) return;
+
+        if (_picker != null && _picker.TryPick(out PieceType chosen))
+        {
+            string uci = _promoBaseUci + Move.PromotionToChar(chosen);
+            FinishPromotion();          // close picker; the confirmed move reconciles the preview
+            Debug.Log($"Sending move: {uci}");
+            _session.SendMove(uci);
+        }
+        else
+        {
+            Debug.Log("Promotion canceled.");
+            CancelPromotion();          // slide the pawn back
+        }
+    }
+
+    private void FinishPromotion()
+    {
+        if (_picker != null)
+            _picker.Close();
+        _awaitingPromotion = false;
+        _promoBaseUci = null;
+    }
+
+    // Clicked out, or the game ended: undo the slide and close the picker
+    private void CancelPromotion()
+    {
+        if (_boardView != null) _boardView.CancelPromotionPreview();
+        FinishPromotion();
+    }
+
+    private void ClearBoardHighlights()
+    {
+        if (_highlighter == null) return;
+        _highlighter.ClearHover();
+        _highlighter.ClearSelection();
+        _highlighter.ClearLegalMoves();
+        _highlighter.ClearLegalCaptures();
+        _dotsForFile = _dotsForRank = -1;   // force dots to rebuild once input resumes
     }
 
     private bool IsSelectable(int file, int rank)
