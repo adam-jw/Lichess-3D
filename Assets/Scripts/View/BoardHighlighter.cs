@@ -21,6 +21,22 @@ public class BoardHighlighter : MonoBehaviour
     }
 
     [SerializeField] private BoardView _boardView;              // shared square->local mapping
+    [SerializeField] private BoardSquares _boardSquares;   // fill layers tint the square itself
+    [SerializeField] private float _quadScale = 1f;        // shaped quad size, relative to a square
+
+    // A fill layer's claim: which squares, and the color washed over them
+    private class TintLayer
+    {
+        public Color color;
+        public readonly List<Square> squares = new List<Square>();
+    }
+
+    private readonly Dictionary<HighlightLayer, TintLayer> _tints = new Dictionary<HighlightLayer, TintLayer>();
+    private readonly HashSet<Square> _dirty = new HashSet<Square>();   // reused; hover repaints every frame
+    private HighlightLayer[] _tintOrder;   // layers bottom to top
+
+    private float SurfaceY => _boardSquares != null ? _boardSquares.SurfaceY : 0f;
+
     [SerializeField] private LichessGameSession _session;
     [SerializeField] private GameObject _highlightPrefab;
     [SerializeField] private float _heightOffset = 0.02f;       // float above the board, dodge z-fighting
@@ -62,6 +78,12 @@ public class BoardHighlighter : MonoBehaviour
     private readonly Dictionary<HighlightLayer, List<GameObject>> _active =
         new Dictionary<HighlightLayer, List<GameObject>>();
     private readonly Stack<GameObject> _pool = new Stack<GameObject>();
+
+    private void Awake()
+    {
+        _tintOrder = (HighlightLayer[])System.Enum.GetValues(typeof(HighlightLayer));
+        System.Array.Sort(_tintOrder, (a, b) => LayerOrder(a).CompareTo(LayerOrder(b)));
+    }
 
     private void OnEnable()
     {
@@ -167,8 +189,15 @@ public class BoardHighlighter : MonoBehaviour
 
     private void SetLayer(HighlightLayer layer, HighlightStyle style, params (int file, int rank)[] squares)
     {
-        if (_highlightPrefab == null || _boardView == null)
+        if (_boardView == null) return;
+
+        if (style.shape == HighlightShape.Fill && _boardSquares != null)
+        {
+            SetTintLayer(layer, style.color, squares);
             return;
+        }
+
+        if (_highlightPrefab == null) return;
 
         if (!_active.TryGetValue(layer, out List<GameObject> quads))
         {
@@ -181,8 +210,10 @@ public class BoardHighlighter : MonoBehaviour
         foreach ((int file, int rank) in squares)
         {
             GameObject quad = Take();
+            float size = _boardView.SquareSize * _quadScale;
+            quad.transform.localScale = new Vector3(size, size, 1f);   // quad primitive is 1x1 in its own XY
             quad.transform.localPosition = _boardView.SquareToLocal(file, rank)
-                                         + Vector3.up * (_heightOffset + LayerOrder(layer) * _layerStep);
+                                         + Vector3.up * (SurfaceY + _heightOffset + LayerOrder(layer) * _layerStep);
 
             var mat = quad.GetComponent<Renderer>().material;
             mat.SetColor("_BaseColor", style.color);
@@ -198,6 +229,7 @@ public class BoardHighlighter : MonoBehaviour
 
     private void ClearLayer(HighlightLayer layer)
     {
+        ClearTintLayer(layer);
         if (_active.TryGetValue(layer, out List<GameObject> quads))
             Recycle(quads);
     }
@@ -216,6 +248,70 @@ public class BoardHighlighter : MonoBehaviour
             tuples[i] = (squares[i].File, squares[i].Rank);
 
         SetLayer(layer, style, tuples);
+    }
+
+    // ---------- Square Tinting ----------
+
+    private void SetTintLayer(HighlightLayer layer, Color color, (int file, int rank)[] squares)
+    {
+        if (!_tints.TryGetValue(layer, out TintLayer t))
+            _tints[layer] = t = new TintLayer();
+
+        if (Unchanged(t, color, squares)) return;   // hover re-asserts the same square every frame
+
+        _dirty.Clear();
+        foreach (Square sq in t.squares) _dirty.Add(sq);   // repaint what we're giving up
+
+        t.color = color;
+        t.squares.Clear();
+        foreach ((int file, int rank) in squares)
+        {
+            var sq = new Square(file, rank);
+            t.squares.Add(sq);
+            _dirty.Add(sq);
+        }
+
+        Repaint();
+    }
+
+    private void ClearTintLayer(HighlightLayer layer)
+    {
+        if (!_tints.TryGetValue(layer, out TintLayer t) || t.squares.Count == 0) return;
+
+        _dirty.Clear();
+        foreach (Square sq in t.squares) _dirty.Add(sq);
+        t.squares.Clear();
+        Repaint();
+    }
+
+    // Recolor the dirty squares from scratch: base color, then every claim in stacking order
+    private void Repaint()
+    {
+        foreach (Square sq in _dirty)
+        {
+            Color c = _boardSquares.BaseColorFor(sq);
+            foreach (HighlightLayer layer in _tintOrder)
+                if (_tints.TryGetValue(layer, out TintLayer t) && t.squares.Contains(sq))
+                    c = Blend(c, t.color);
+
+            _boardSquares.SetColor(sq, c);
+        }
+    }
+
+    // Alpha-over: the layer's alpha is how much of its color lands on the square
+    private static Color Blend(Color under, Color over)
+    {
+        Color c = Color.Lerp(under, over, over.a);
+        c.a = 1f;
+        return c;
+    }
+
+    private static bool Unchanged(TintLayer t, Color color, (int file, int rank)[] squares)
+    {
+        if (t.color != color || t.squares.Count != squares.Length) return false;
+        for (int i = 0; i < squares.Length; i++)
+            if (t.squares[i] != new Square(squares[i].file, squares[i].rank)) return false;
+        return true;
     }
 
 

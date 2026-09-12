@@ -349,12 +349,15 @@ public class BoardView : MonoBehaviour
     private float HopHeightFor(PieceType type) =>
         _hopLookup.TryGetValue(type, out float h) ? h : _hopHeight;
 
+    public float SquareSize => squareSize;
+    
     public Vector3 SquareToLocal(int file, int rank)
     {
         float x = (file - 3.5f) * squareSize;
         float z = (rank - 3.5f) * squareSize;
         return new Vector3(x, 0f, z);
     }
+
 
     // LOCAL-space point on the board -> the square containing it
     // Returns false if the point is outside the 8x8

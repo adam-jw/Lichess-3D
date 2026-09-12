@@ -32,7 +32,7 @@ public static class GameResultText
             // 'resign' and 'outoftime' always have a winner, so the loser is known
             // Null guard is for potential malformed payloads
             case "resign": return loser == null ? "Resignation" : loser + " resigned";
-            case "outoftime": return loser == null ? "Out of time" : loser + " ran out of time";
+            case "outoftime": return loser == null ? "Out of time" : loser + " time out";
 
             // NOT the same as 'outoftime'; This is a player abandoning the game
             // (id 33 vs 35 in the spec) a flag fall is 'outoftime'
