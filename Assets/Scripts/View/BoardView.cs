@@ -45,6 +45,7 @@ public class BoardView : MonoBehaviour
     [Header("Facing")]
     [SerializeField] private KnightFacing _knightFacing = KnightFacing.FaceEachOther;
     [SerializeField] private float _knightYaw = 90f;   // sideways facing, in degrees
+    [SerializeField] private float _knightColorYawOffset = 180f;   // black knight model points the opposite way
 
     [SerializeField] private float _knightSnoutNudge = 0.15f;   // shift along facing so the snout sits over the square
 
@@ -297,7 +298,8 @@ public class BoardView : MonoBehaviour
                 if (color == PieceColor.Black) yaw += 180f;   // far army turns to face down the board
                 break;
             case KnightFacing.FaceEachOther:
-                if (square.File >= 4) yaw += 180f;            // kingside knight turns back toward the centre
+                if (square.File >= 4) yaw += 180f;            // kingside knight turns back toward the center
+                if (color == PieceColor.Black) yaw += _knightColorYawOffset;
                 break;
         }
         return Quaternion.Euler(0f, yaw, 0f);
