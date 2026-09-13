@@ -1235,6 +1235,7 @@ GameObject:
   - component: {fileID: 168287089}
   - component: {fileID: 168287090}
   - component: {fileID: 168287097}
+  - component: {fileID: 168287098}
   - component: {fileID: 168287091}
   - component: {fileID: 168287092}
   - component: {fileID: 168287093}
@@ -1634,10 +1635,32 @@ MonoBehaviour:
   _boardView: {fileID: 168287086}
   _boardInput: {fileID: 168287088}
   _highlighter: {fileID: 168287090}
+  _arrows: {fileID: 168287098}
   _plainColor: {r: 0.85, g: 0.2, b: 0.16, a: 0.8}
   _shiftColor: {r: 0.35, g: 0.68, b: 0.25, a: 0.8}
   _altColor: {r: 0.25, g: 0.52, b: 0.85, a: 0.8}
   _ctrlColor: {r: 0.95, g: 0.6, b: 0.15, a: 0.8}
+--- !u!114 &168287098
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 168287085}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2fc1d97f030dab5479d37b24e1147f2e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BoardArrows
+  _boardView: {fileID: 168287086}
+  _boardSquares: {fileID: 168287096}
+  _arrowMaterial: {fileID: 2100000, guid: 5f02aee404193bb499f3564397f93d7f, type: 2}
+  _width: 0.2
+  _headLength: 0.36
+  _headWidth: 0.5
+  _tailInset: 0.32
+  _headInset: 0.08
+  _heightOffset: 0.02
 --- !u!1 &193625474
 GameObject:
   m_ObjectHideFlags: 0

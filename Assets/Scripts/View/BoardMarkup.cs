@@ -9,6 +9,7 @@ public class BoardMarkup : MonoBehaviour
     [SerializeField] private BoardView _boardView;
     [SerializeField] private BoardInput _boardInput;
     [SerializeField] private BoardHighlighter _highlighter;
+    [SerializeField] private BoardArrows _arrows;
 
     [Header("Colors")]
     [SerializeField] private Color _plainColor = new Color(0.85f, 0.20f, 0.16f, 0.80f);
@@ -139,12 +140,19 @@ public class BoardMarkup : MonoBehaviour
 
     private void Refresh()
     {
-        if (_highlighter == null) return;
-
         MarkupSet set = CurrentSet(create: false);
 
-        if (set == null || set.squares.Count == 0) _highlighter.ClearMarkup();
-        else _highlighter.SetMarkup(set.squares);
+        if (_highlighter != null)
+        {
+            if (set == null || set.squares.Count == 0) _highlighter.ClearMarkup();
+            else _highlighter.SetMarkup(set.squares);
+        }
+
+        if (_arrows != null)
+        {
+            if (set == null || set.arrows.Count == 0) _arrows.ClearArrows();
+            else _arrows.SetArrows(set.arrows);
+        }
     }
 
     // ---------- History ----------
