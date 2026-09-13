@@ -102,7 +102,7 @@ public class BoardInput : MonoBehaviour
         _session.SendMove(uci);
     }
 
-    private static bool IsPointerOverUI() =>
+    public static bool IsPointerOverUI() =>
         EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
 
     private static bool IsPremoveLegal(BoardState board, Move premove)
@@ -145,7 +145,7 @@ public class BoardInput : MonoBehaviour
         if (_hasPremove)
             ClearPremove();   // any click cancels a queued premove
 
-        if (!TryGetClickedSquare(out int file, out int rank))
+        if (!TryGetSquareUnderPointer(out int file, out int rank))
         {
             _hasSelection = false;   // clicked off the board -> cancel
             return;
@@ -204,7 +204,7 @@ public class BoardInput : MonoBehaviour
         if (!_hasSelection)
             return;
 
-        if (!TryGetClickedSquare(out int file, out int rank))
+        if (!TryGetSquareUnderPointer(out int file, out int rank))
             return;   // released off the board; keep the selection, ignore
 
         // Released on the origin square = click, not drag
@@ -269,7 +269,20 @@ public class BoardInput : MonoBehaviour
         Debug.Log("Premove queued: " + uci);
     }
 
-    private bool TryGetClickedSquare(out int file, out int rank)
+    // Square under the cursor: the piece we hit, or where the ray meets the board
+    public bool TryGetSquareUnderPointer(out Square square)
+    {
+        if (!TryGetSquareUnderPointer(out int file, out int rank))
+        {
+            square = default;
+            return false;
+        }
+
+        square = new Square(file, rank);
+        return true;
+    }
+
+    private bool TryGetSquareUnderPointer(out int file, out int rank)
     {
         file = rank = -1;
 
@@ -311,7 +324,7 @@ public class BoardInput : MonoBehaviour
     {
         if (_highlighter == null) return;
 
-        if (TryGetClickedSquare(out int file, out int rank))
+        if (TryGetSquareUnderPointer(out int file, out int rank))
             _highlighter.SetHover(file, rank, IsSelectable(file, rank));
         else
             _highlighter.ClearHover();

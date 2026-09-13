@@ -5,7 +5,7 @@ using UnityEngine;
 
 public class BoardHighlighter : MonoBehaviour
 {
-    public enum HighlightLayer { Hover, Selection, LastMove, Premove, Check, LegalMove, LegalCapture }
+    public enum HighlightLayer { Hover, Selection, LastMove, Markup, Premove, Check, LegalMove, LegalCapture }
 
     public enum HighlightShape { Fill, Dot, Ring, Radial, Corners }
 
@@ -18,6 +18,8 @@ public class BoardHighlighter : MonoBehaviour
         [Range(0f, 1f)] public float innerRadius;
         [Range(0.001f, 0.5f)] public float softness;
         [Range(0.01f, 0.7f)] public float thickness;   // ring only
+        public bool splitBySquareColor;   
+        public Color darkSquareColor;
     }
 
     [SerializeField] private BoardView _boardView;              // shared square->local mapping
@@ -27,9 +29,11 @@ public class BoardHighlighter : MonoBehaviour
     // A fill layer's claim: which squares, and the color washed over them
     private class TintLayer
     {
-        public Color color;
-        public readonly List<Square> squares = new List<Square>();
+        public bool replacesBelow;   // covers what's under it instead of mixing with it
+        public readonly List<(Square square, Color color)> marks = new List<(Square, Color)>();
     }
+
+    private readonly List<(Square square, Color color)> _scratch = new List<(Square, Color)>();
 
     private readonly Dictionary<HighlightLayer, TintLayer> _tints = new Dictionary<HighlightLayer, TintLayer>();
     private readonly HashSet<Square> _dirty = new HashSet<Square>();   // reused; hover repaints every frame
@@ -211,12 +215,17 @@ public class BoardHighlighter : MonoBehaviour
         {
             GameObject quad = Take();
             float size = _boardView.SquareSize * _quadScale;
+
+            Color shapeColor = style.splitBySquareColor && _boardSquares != null && _boardSquares.IsDark(new Square(file, rank))
+                ? style.darkSquareColor
+                : style.color;
+
             quad.transform.localScale = new Vector3(size, size, 1f);   // quad primitive is 1x1 in its own XY
             quad.transform.localPosition = _boardView.SquareToLocal(file, rank)
                                          + Vector3.up * (SurfaceY + _heightOffset + LayerOrder(layer) * _layerStep);
 
             var mat = quad.GetComponent<Renderer>().material;
-            mat.SetColor("_BaseColor", style.color);
+            mat.SetColor("_BaseColor", shapeColor);
             mat.SetFloat("_Shape", (float)(int)style.shape);
             mat.SetFloat("_Radius", style.radius);
             mat.SetFloat("_Inner", style.innerRadius);
@@ -254,20 +263,39 @@ public class BoardHighlighter : MonoBehaviour
 
     private void SetTintLayer(HighlightLayer layer, Color color, (int file, int rank)[] squares)
     {
+        _scratch.Clear();
+        foreach ((int file, int rank) in squares)
+            _scratch.Add((new Square(file, rank), color));
+
+        SetTintEntries(layer, _scratch, replacesBelow: false);
+    }
+
+    public void SetMarkup(IReadOnlyDictionary<Square, Color> marks)
+    {
+        _scratch.Clear();
+        foreach (KeyValuePair<Square, Color> kv in marks)
+            _scratch.Add((kv.Key, kv.Value));
+
+        SetTintEntries(HighlightLayer.Markup, _scratch, replacesBelow: true);
+    }
+
+    public void ClearMarkup() => ClearLayer(HighlightLayer.Markup);
+
+    private void SetTintEntries(HighlightLayer layer, List<(Square square, Color color)> entries, bool replacesBelow)
+    {
         if (!_tints.TryGetValue(layer, out TintLayer t))
             _tints[layer] = t = new TintLayer();
 
-        if (Unchanged(t, color, squares)) return;   // hover re-asserts the same square every frame
+        if (t.replacesBelow == replacesBelow && Unchanged(t, entries)) return;
 
         _dirty.Clear();
-        foreach (Square sq in t.squares) _dirty.Add(sq);   // repaint what we're giving up
+        foreach ((Square sq, Color _) in t.marks) _dirty.Add(sq);
 
-        t.color = color;
-        t.squares.Clear();
-        foreach ((int file, int rank) in squares)
+        t.replacesBelow = replacesBelow;
+        t.marks.Clear();
+        foreach ((Square sq, Color c) in entries)
         {
-            var sq = new Square(file, rank);
-            t.squares.Add(sq);
+            t.marks.Add((sq, c));
             _dirty.Add(sq);
         }
 
@@ -276,26 +304,43 @@ public class BoardHighlighter : MonoBehaviour
 
     private void ClearTintLayer(HighlightLayer layer)
     {
-        if (!_tints.TryGetValue(layer, out TintLayer t) || t.squares.Count == 0) return;
+        if (!_tints.TryGetValue(layer, out TintLayer t) || t.marks.Count == 0) return;
 
         _dirty.Clear();
-        foreach (Square sq in t.squares) _dirty.Add(sq);
-        t.squares.Clear();
+        foreach ((Square sq, Color _) in t.marks) _dirty.Add(sq);
+        t.marks.Clear();
         Repaint();
     }
 
     // Recolor the dirty squares from scratch: base color, then every claim in stacking order
     private void Repaint()
     {
+        if (_boardSquares == null) return;
+        
         foreach (Square sq in _dirty)
         {
-            Color c = _boardSquares.BaseColorFor(sq);
+            Color baseColor = _boardSquares.BaseColorFor(sq);
+            Color c = baseColor;
+
             foreach (HighlightLayer layer in _tintOrder)
-                if (_tints.TryGetValue(layer, out TintLayer t) && t.squares.Contains(sq))
-                    c = Blend(c, t.color);
+            {
+                if (!_tints.TryGetValue(layer, out TintLayer t)) continue;
+                if (!TryFind(t, sq, out Color layerColor)) continue;
+
+                c = Blend(t.replacesBelow ? baseColor : c, layerColor);
+            }
 
             _boardSquares.SetColor(sq, c);
         }
+    }
+
+    private static bool TryFind(TintLayer t, Square sq, out Color color)
+    {
+        foreach ((Square s, Color c) in t.marks)
+            if (s == sq) { color = c; return true; }
+
+        color = default;
+        return false;
     }
 
     // Alpha-over: the layer's alpha is how much of its color lands on the square
@@ -306,11 +351,13 @@ public class BoardHighlighter : MonoBehaviour
         return c;
     }
 
-    private static bool Unchanged(TintLayer t, Color color, (int file, int rank)[] squares)
+    private static bool Unchanged(TintLayer t, List<(Square square, Color color)> entries)
     {
-        if (t.color != color || t.squares.Count != squares.Length) return false;
-        for (int i = 0; i < squares.Length; i++)
-            if (t.squares[i] != new Square(squares[i].file, squares[i].rank)) return false;
+        if (t.marks.Count != entries.Count) return false;
+
+        for (int i = 0; i < entries.Count; i++)
+            if (t.marks[i].square != entries[i].square || t.marks[i].color != entries[i].color) return false;
+
         return true;
     }
 
@@ -351,13 +398,14 @@ public class BoardHighlighter : MonoBehaviour
     // Stacking order to prevent flickering from multiple highlights at same height
     private static int LayerOrder(HighlightLayer layer) => layer switch
     {
-        HighlightLayer.LastMove => 0,   
-        HighlightLayer.Check => 1,
-        HighlightLayer.LegalMove => 2,
-        HighlightLayer.LegalCapture => 3,
-        HighlightLayer.Premove => 4,
-        HighlightLayer.Selection => 5,
-        HighlightLayer.Hover => 6,
+        HighlightLayer.LastMove => 0,
+        HighlightLayer.Markup => 1,   
+        HighlightLayer.Check => 2,
+        HighlightLayer.LegalMove => 3,
+        HighlightLayer.LegalCapture => 4,
+        HighlightLayer.Premove => 5,
+        HighlightLayer.Selection => 6,
+        HighlightLayer.Hover => 7,
         _ => 0,
     };
 

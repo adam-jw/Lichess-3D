@@ -32,6 +32,8 @@ public class BoardSquares : MonoBehaviour
 
     public float SurfaceY => _surfaceOffset;   // local y of the board's top face
 
+    public bool IsDark(Square sq) => (sq.File + sq.Rank) % 2 == 0;
+
     private void Awake() => Rebuild();
 
     // ---------- Build ----------

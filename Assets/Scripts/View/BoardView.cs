@@ -350,7 +350,9 @@ public class BoardView : MonoBehaviour
         _hopLookup.TryGetValue(type, out float h) ? h : _hopHeight;
 
     public float SquareSize => squareSize;
-    
+
+    public int ViewedMoveCount => _viewedMoveCount;
+
     public Vector3 SquareToLocal(int file, int rank)
     {
         float x = (file - 3.5f) * squareSize;
