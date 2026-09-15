@@ -1304,7 +1304,7 @@ MonoBehaviour:
     prefab: {fileID: 8725371297361333506, guid: 1a9f344c25bc0dd4d928b8dd9e69decf, type: 3}
   - type: 5
     color: 1
-    prefab: {fileID: 3511926282834067179, guid: 8333f913b48db314faa778662ae00094, type: 3}
+    prefab: {fileID: 8725371297361333506, guid: 1a9f344c25bc0dd4d928b8dd9e69decf, type: 3}
   - type: 6
     color: 0
     prefab: {fileID: 4475339917457580527, guid: 1c5fa31a3dd4a9d47a01e210f55ba544, type: 3}
@@ -1615,7 +1615,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e82d2e131ebdc634a8085417b8468b26, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BoardSquares
-  _boardView: {fileID: 0}
+  _boardView: {fileID: 168287086}
   _squareMaterial: {fileID: 2100000, guid: 513ba984f130e67488172cea44d58ea3, type: 2}
   _lightColor: {r: 1, g: 1, b: 1, a: 1}
   _darkColor: {r: 0, g: 0, b: 0, a: 1}
@@ -4279,6 +4279,7 @@ GameObject:
   - component: {fileID: 785838380}
   - component: {fileID: 785838382}
   - component: {fileID: 785838383}
+  - component: {fileID: 785838384}
   m_Layer: 0
   m_Name: LichessManager
   m_TagString: Untagged
@@ -4391,6 +4392,23 @@ MonoBehaviour:
   _session: {fileID: 785838380}
   _idleSeconds: 7
   _backoffSeconds: 60
+--- !u!114 &785838384
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 785838375}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76b46ea06247f304f99b88f221565025, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameActionDebugInput
+  _session: {fileID: 785838380}
+  _resignKey: 61
+  _abortKey: 93
+  _drawOfferKey: 59
+  _drawDeclineKey: 107
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0

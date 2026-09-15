@@ -32,6 +32,9 @@ public class LichessGameSession : MonoBehaviour
     private readonly GameSnapshot _snapshot = new GameSnapshot();
     public GameSnapshot Snapshot => _snapshot;
 
+    private readonly GameChat _chat = new GameChat();
+    public GameChat Chat => _chat;
+
     public bool IsMyTurn =>
         IsGameActive && MyColor.HasValue && SideToMove == MyColor;
 
@@ -51,6 +54,11 @@ public class LichessGameSession : MonoBehaviour
     public event System.Action<GameFullEvent> OnGameFullReceived;
     public event System.Action<GameEndReason, string> OnGameEnded;   // reason, final status
     public event System.Action OnMyTurnBegan;
+    public event System.Action<ChatLineEvent> OnChatMessageReceived;
+
+    public bool OpponentGone { get; private set; }
+    public int? ClaimWinInSeconds { get; private set; }
+    public event System.Action OnOpponentGoneChanged;
 
     private void OnEnable()
     {
@@ -99,12 +107,18 @@ public class LichessGameSession : MonoBehaviour
         _boardStream.OnGameStateReceived += HandleGameState;
         _boardStream.OnGameFullReceived += HandleGameFull;
         _boardStream.OnStreamEnded += HandleStreamEnded;
+        _boardStream.OnChatLineReceived += HandleChatLine;
+        _boardStream.OnOpponentGoneReceived += HandleOpponentGone;
         _boardStream.Initialize(_authManager, _client, game.gameId);
         _boardStream.StartStream();
 
         _reconnector.NotifyConnected();
 
         _snapshot.Begin(game, MyColor ?? PieceColor.White);
+        _chat.Clear();
+
+        OpponentGone = false;                                    
+        ClaimWinInSeconds = null;
 
         Debug.Log("Session: game " + CurrentGameId + " begun, playing " + MyColor);
         OnGameStarted?.Invoke(game);
@@ -151,6 +165,12 @@ public class LichessGameSession : MonoBehaviour
         OnGameFullReceived?.Invoke(full);
     }
 
+    private void HandleChatLine(ChatLineEvent line)
+    {
+        _chat.Append(line);
+        OnChatMessageReceived?.Invoke(line);
+    }
+
     // Called by BoardInput 
     public void SendMove(string uciMove)
     {
@@ -168,6 +188,94 @@ public class LichessGameSession : MonoBehaviour
         }
 
         _boardStream.SendMove(uciMove);
+    }
+
+    // yes = offer or accept (API can't tell them apart), no = decline
+    public void SendDraw(bool accept)
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Draw ignored - no active game");
+            return;
+        }
+
+        _boardStream.Draw(accept);
+    }
+
+    // yes = propose or accept, no = decline
+    public void SendTakeback(bool accept)
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Takeback ignored - no active game");
+            return;
+        }
+
+        _boardStream.Takeback(accept);
+    }
+
+    public void SendChat(string text)
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Chat ignored - no active game");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        _boardStream.SendChat(text);
+    }
+
+    public void Resign()
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Resign ignored - no active game");
+            return;
+        }
+
+        _boardStream.Resign();
+    }
+
+    public void Abort()
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Abort ignored - no active game");
+            return;
+        }
+
+        _boardStream.Abort();
+    }
+
+    private void HandleOpponentGone(OpponentGoneEvent gone)
+    {
+        OpponentGone = gone.gone;
+        ClaimWinInSeconds = gone.gone ? gone.claimWinInSeconds : null;
+        OnOpponentGoneChanged?.Invoke();
+    }
+
+    public void ClaimVictory()
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Claim victory ignored - no active game");
+            return;
+        }
+
+        _boardStream.ClaimVictory();
+    }
+
+    public void ClaimDraw()
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Claim draw ignored - no active game");
+            return;
+        }
+
+        _boardStream.ClaimDraw();
     }
 
     private static PieceColor? ParseColor(string wire) => wire switch
@@ -304,6 +412,8 @@ public class LichessGameSession : MonoBehaviour
             _boardStream.OnGameStateReceived -= HandleGameState;
             _boardStream.OnGameFullReceived -= HandleGameFull;
             _boardStream.OnStreamEnded -= HandleStreamEnded;
+            _boardStream.OnChatLineReceived -= HandleChatLine;
+            _boardStream.OnOpponentGoneReceived -= HandleOpponentGone;
             _boardStream.StopStream();
 
             // Defer destroy to end of frame, so it's safe to call 
@@ -322,5 +432,17 @@ public class LichessGameSession : MonoBehaviour
         SideToMove = null;
 
         OnGameEnded?.Invoke(reason, _finalStatus);
+    }
+
+    // Gift the opponent time
+    public void GiftTime(int seconds = 15)
+    {
+        if (!IsGameActive || _boardStream == null)
+        {
+            Debug.LogWarning("Gift time ignored - no active game");
+            return;
+        }
+
+        _boardStream.AddTime(Mathf.Clamp(seconds, 5, 60));
     }
 }

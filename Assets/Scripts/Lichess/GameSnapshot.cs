@@ -58,6 +58,12 @@ public class GameSnapshot
 
     public bool IsFinished => HasGame && !IsActive && EndReason.HasValue;
 
+    // ----- Offers (derived from the latest state; re-sent every gameState) -----
+    public bool OpponentOfferingDraw { get; private set; }
+    public bool MyDrawOfferPending { get; private set; }
+    public bool OpponentProposingTakeback { get; private set; }
+    public bool MyTakebackPending { get; private set; }
+
     // ---------- Population ----------
 
     // Clears everything; The single reset point, mirroring the session's own HandleGameStart
@@ -87,6 +93,11 @@ public class GameSnapshot
         OpponentAiLevel = null;
 
         PlyCount = 0;
+
+        OpponentOfferingDraw = false;
+        MyDrawOfferPending = false;
+        OpponentProposingTakeback = false;
+        MyTakebackPending = false;
 
         EndReason = null;
         FinalStatus = null;
@@ -141,6 +152,12 @@ public class GameSnapshot
         if (!HasGame || state == null) return;
 
         PlyCount = CountPlies(state.moves);
+
+        OpponentOfferingDraw = OpponentColor == PieceColor.White ? state.wdraw : state.bdraw;
+        MyDrawOfferPending = MyColor == PieceColor.White ? state.wdraw : state.bdraw;
+
+        OpponentProposingTakeback = OpponentColor == PieceColor.White ? state.wtakeback : state.btakeback;
+        MyTakebackPending = MyColor == PieceColor.White ? state.wtakeback : state.btakeback;
     }
 
     public void End(GameEndReason reason, string finalStatus, string winnerWire)

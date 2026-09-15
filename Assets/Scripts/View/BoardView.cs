@@ -372,18 +372,6 @@ public class BoardView : MonoBehaviour
         return file >= 0 && file < 8 && rank >= 0 && rank < 8;
     }
 
-    // TEMP board square rendering
-    private void OnDrawGizmos()
-    {
-        Gizmos.color = Color.white;
-        for (int file = 0; file < 8; file++)
-            for (int rank = 0; rank < 8; rank++)
-            {
-                Vector3 world = transform.TransformPoint(SquareToLocal(file, rank));
-                Gizmos.DrawWireCube(world, new Vector3(squareSize, 0.01f, squareSize) * 0.9f);
-            }
-    }
-
     private void OnEnable()
     {
         if (_session != null)

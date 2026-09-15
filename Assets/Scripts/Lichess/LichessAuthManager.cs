@@ -13,7 +13,7 @@ public class LichessAuthManager : MonoBehaviour
     private const string RedirectUri = "http://localhost:5000/callback";
     private const string AuthEndpoint = "https://lichess.org/oauth";
     private const string TokenEndpoint = "https://lichess.org/api/token";
-    private const string Scopes = "board:play";
+    private const string Scopes = "board:play challenge:write";
 
     private string _codeVerifier;
     private string _accessToken;
@@ -64,7 +64,7 @@ public class LichessAuthManager : MonoBehaviour
             "&redirect_uri=" + Uri.EscapeDataString(RedirectUri) +
             "&code_challenge_method=S256" +
             "&code_challenge=" + codeChallenge +
-            "&scope=" + Scopes +
+            "&scope=" + Uri.EscapeDataString(Scopes) +
             "&state=" + state;
 
         Application.OpenURL(authUrl);
@@ -187,8 +187,11 @@ public class LichessAuthManager : MonoBehaviour
         string path = Application.persistentDataPath + "/lichess_token.txt";
         
         if (System.IO.File.Exists(path))
+        {
+            Debug.Log("Token saved to: " + path);
             return System.IO.File.ReadAllText(path);
-            
+        }
+        
         return null;
     }
 }

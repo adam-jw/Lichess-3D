@@ -45,6 +45,12 @@ public class GameStateEvent
     public int btime;        // ms left on Black's clock
     public int winc;         // White increment, ms
     public int binc;         // Black increment, ms
+
+    // Offer flags; omitted on the wire when false, so an absent field stays false
+    public bool wdraw;       // white is offering / has offered a draw
+    public bool bdraw;       // black is offering / has offered a draw
+    public bool wtakeback;   // white is proposing a takeback
+    public bool btakeback;   // black is proposing a takeback
 }
 
 // Mirrors GameFullEvent: first line of the board stream, nests a gameState
@@ -105,4 +111,19 @@ public enum GameEndReason
 {
     Finished,        // terminal status (or Lichess sent gameFinish)
     ConnectionLost   // stream closed without the game ever ending
+}
+
+public class ChatLineEvent
+{
+    public string type;      // "chatLine"
+    public string room;      // "player" or "spectator"
+    public string username;
+    public string text;
+}
+
+public class OpponentGoneEvent
+{
+    public string type;              // "opponentGone"
+    public bool gone;
+    public int? claimWinInSeconds;   // countdown until claimable; null when not gone
 }
